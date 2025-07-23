@@ -121,7 +121,12 @@ OxidizedOasis-WebSands implements a comprehensive JWT-based authentication syste
 
 ### Prerequisites
 
-Before you begin, ensure you have the following installed:
+**🍎 For macOS users:** You can skip manual installation of prerequisites! Use our automated setup script:
+```sh
+./setup-mac.sh
+```
+
+**For manual installation or other platforms**, ensure you have the following installed:
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
 - [PostgreSQL](https://www.postgresql.org/download/) (version 13 or later)
 - [Docker](https://docs.docker.com/get-docker/) (optional, for containerized deployment)
@@ -244,9 +249,41 @@ Before you begin, ensure you have the following installed:
    ```
    Replace both files placeholders(.env and .env.test) with your actual database, SMTP, and other credentials.
 
-3. Set up the database:
+3. Set up the database and build the application:
+
+   ### 🍎 macOS Setup (Automated)
+   
+   For macOS users, we provide an automated setup script that handles everything:
+   
    ```sh
-   # On Windows, run the PowerShell script to set up the database
+   # Make the script executable (if not already)
+   chmod +x setup-mac.sh
+   
+   # Run the automated setup script
+   ./setup-mac.sh
+   ```
+   
+   This script will automatically:
+   - Install Homebrew (if not present)
+   - Install Xcode Command Line Tools
+   - Install Rust with WebAssembly support
+   - Install Trunk for frontend builds
+   - Install PostgreSQL 14 and start the service
+   - Install SQLx CLI for database migrations
+   - Create the database and run migrations
+   - Install project dependencies
+   - Test the complete setup
+   - Create a `build-mac.sh` script for easy building
+
+   After the setup completes, you can start the application with:
+   ```sh
+   ./build-mac.sh
+   ```
+
+   ### 🪟 Windows Setup
+   
+   For Windows users, run the PowerShell script to set up the database:
+   ```sh
    .\setup-database.ps1
    ```
    This script will:
@@ -255,16 +292,43 @@ Before you begin, ensure you have the following installed:
    - Set up proper permissions for both superuser and application user
    - Run all necessary database migrations
 
-4. Build and run the application:
+   Then build and run the application:
    ```sh
-   # On Windows, use the batch script to build frontend and run the application
    .\build.bat
    ```
-   This script will:
-   - Build the frontend using Trunk
-   - Run the backend server
 
-   Alternatively, you can run these steps manually:
+   ### 🐧 Linux Setup
+   
+   For Linux users, you'll need to manually install the prerequisites and then:
+   ```sh
+   # Install dependencies (Ubuntu/Debian example)
+   sudo apt-get update
+   sudo apt-get install build-essential postgresql postgresql-contrib
+   
+   # Install Rust
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   
+   # Add WebAssembly target
+   rustup target add wasm32-unknown-unknown
+   
+   # Install Trunk and SQLx CLI
+   cargo install trunk
+   cargo install sqlx-cli --no-default-features --features native-tls,postgres
+   
+   # Set up database (adjust connection details as needed)
+   sudo -u postgres createdb oxidizedoasis_db
+   sqlx migrate run
+   
+   # Build and run
+   cd frontend && trunk build && cd ..
+   cargo run
+   ```
+
+   ### 📋 Manual Setup (All Platforms)
+   
+   If you prefer to set up manually or encounter issues with the automated scripts:
+   
    ```sh
    # Build frontend
    cd frontend

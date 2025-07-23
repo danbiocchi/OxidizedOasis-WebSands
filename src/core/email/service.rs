@@ -166,7 +166,7 @@ pub mod mock { // Module is now unconditionally public
     use super::*;
     #[cfg(test)]
     use std::sync::{Arc, Mutex}; // Ensure Arc is imported here
-    use async_trait::async_trait;
+    
 
     #[cfg(test)]
     #[derive(Clone)]

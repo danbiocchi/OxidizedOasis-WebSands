@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrorsKind};
-use indexmap::IndexMap; 
-use std::borrow::Cow; 
+ 
+ 
 use super::password::validate_password;
 use actix_web::web;
 use super::super::utils::validation::USERNAME_REGEX;

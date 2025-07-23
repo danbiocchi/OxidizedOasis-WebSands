@@ -9,14 +9,14 @@ no_autoreload = true
 
 [[hooks]]
 stage = "pre_build"
-command = "cmd"
-command_arguments = ["/C", "if not exist dist\\static\\css\\core mkdir dist\\static\\css\\core && if not exist dist\\static\\css\\components\\nav mkdir dist\\static\\css\\components\\nav && if not exist dist\\static\\css\\components\\forms mkdir dist\\static\\css\\components\\forms && if not exist dist\\static\\css\\layouts mkdir dist\\static\\css\\layouts && if not exist dist\\static\\css\\utils mkdir dist\\static\\css\\utils && if not exist dist\\static\\css\\pages\\home mkdir dist\\static\\css\\pages\\home && if not exist dist\\static\\css\\pages\\about mkdir dist\\static\\css\\pages\\about && if not exist dist\\static\\css\\pages\\auth mkdir dist\\static\\css\\pages\\auth && if not exist dist\\static\\css\\pages\\dashboard mkdir dist\\static\\css\\pages\\dashboard"]
+command = "sh"
+command_arguments = ["-c", "mkdir -p dist/static/css/core dist/static/css/components/nav dist/static/css/components/forms dist/static/css/layouts dist/static/css/utils dist/static/css/pages/home dist/static/css/pages/about dist/static/css/pages/auth dist/static/css/pages/dashboard"]
 
 
 [[hooks]]
 stage = "post_build"
-command = "cmd"
-command_arguments = ["/C", "xcopy /E /I /Y static\\* dist\\static\\"]
+command = "sh"
+command_arguments = ["-c", "cp -r static/* dist/static/ 2>/dev/null || true"]
 
 [watch]
 watch = ["src", "static"]
@@ -31,5 +31,5 @@ source_maps = true
 
 [[hooks]]
 stage = "build"
-command = "cmd"
-command_arguments = ["/C", "xcopy /E /I /Y static\\css\\core\\*.css dist\\static\\css\\core\\ && xcopy /E /I /Y static\\css\\components\\nav\\*.css dist\\static\\css\\components\\nav\\ && xcopy /E /I /Y static\\css\\components\\forms\\*.css dist\\static\\css\\components\\forms\\ && xcopy /E /I /Y static\\css\\components\\*.css dist\\static\\css\\components\\ && xcopy /E /I /Y static\\css\\layouts\\*.css dist\\static\\css\\layouts\\ && xcopy /E /I /Y static\\css\\utils\\*.css dist\\static\\css\\utils\\ && xcopy /E /I /Y static\\css\\pages\\home\\*.css dist\\static\\css\\pages\\home\\ && xcopy /E /I /Y static\\css\\pages\\about\\*.css dist\\static\\css\\pages\\about\\ && xcopy /E /I /Y static\\css\\pages\\auth\\*.css dist\\static\\css\\pages\\auth\\ && xcopy /E /I /Y static\\css\\pages\\dashboard\\*.css dist\\static\\css\\pages\\dashboard\\ && xcopy /E /I /Y static\\css\\*.css dist\\static\\css\\"]
+command = "sh"
+command_arguments = ["-c", "cp -r static/css/core/*.css dist/static/css/core/ 2>/dev/null || true && cp -r static/css/components/nav/*.css dist/static/css/components/nav/ 2>/dev/null || true && cp -r static/css/components/forms/*.css dist/static/css/components/forms/ 2>/dev/null || true && cp -r static/css/components/*.css dist/static/css/components/ 2>/dev/null || true && cp -r static/css/layouts/*.css dist/static/css/layouts/ 2>/dev/null || true && cp -r static/css/utils/*.css dist/static/css/utils/ 2>/dev/null || true && cp -r static/css/pages/home/*.css dist/static/css/pages/home/ 2>/dev/null || true && cp -r static/css/pages/about/*.css dist/static/css/pages/about/ 2>/dev/null || true && cp -r static/css/pages/auth/*.css dist/static/css/pages/auth/ 2>/dev/null || true && cp -r static/css/pages/dashboard/*.css dist/static/css/pages/dashboard/ 2>/dev/null || true && cp -r static/css/*.css dist/static/css/ 2>/dev/null || true"]

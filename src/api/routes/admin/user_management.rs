@@ -3,7 +3,7 @@ use std::sync::Arc;
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::core::user::{User, UserRepository, UserRepositoryTrait};
+use crate::core::user::{User, UserRepositoryTrait};
 use crate::common::error::{ApiError, ApiErrorType};
 use crate::api::responses::ApiResponse;
 use serde_json::json;
