@@ -672,7 +672,10 @@ mod tests {
         let db_url = std::env::var("TEST_DATABASE_URL")
             .unwrap_or_else(|_| "postgres://testuser:testpassword@localhost:5433/testdb".to_string());
         
-        let config = DatabaseConfig { url: db_url };
+        let config = DatabaseConfig {
+            url: db_url,
+            max_connections: 5,
+        };
         let pool = config.get_pool().await.expect("Failed to create test DB pool");
         
         // Optional: Run migrations if your test DB is ephemeral or needs schema setup

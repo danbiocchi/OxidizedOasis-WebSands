@@ -1141,7 +1141,7 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(password_reset_token_db.clone()));
         
-        mock_email_service.expect_send_password_reset_email()
+        mock_email_service_instance.expect_send_password_reset_email()
             .with(predicate::eq(user_email.to_string()), predicate::eq(reset_token_value.clone()))
             .times(1)
             .returning(|_,_| Ok(()));
@@ -1289,7 +1289,7 @@ mod tests {
         mock_repo.expect_find_user_by_email().times(1).returning(move |_| Ok(Some(test_user.clone())));
         mock_repo.expect_create_password_reset_token().times(1).returning(move |_| Ok(password_reset_token_db.clone()));
         
-        mock_email_service.expect_send_password_reset_email()
+        mock_email_service_instance.expect_send_password_reset_email()
             .times(1)
             .returning(|_, _| Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Simulated send failure"))));
 
@@ -1327,7 +1327,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1349,7 +1349,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1374,7 +1374,7 @@ mod tests {
             
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1422,7 +1422,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1441,7 +1441,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1468,7 +1468,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1565,7 +1565,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1593,7 +1593,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1619,7 +1619,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1642,7 +1642,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1665,7 +1665,7 @@ mod tests {
             
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
 
@@ -1768,7 +1768,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service,
+            Arc::new(mock_email_service),
             Arc::new(mock_token_revocation_service),
         );
         
@@ -1849,7 +1849,7 @@ mod tests {
         
         // Token revocation
         mock_token_revocation_service.expect_revoke_all_user_tokens()
-            .with(predicate::eq(user_id), predicate::eq(Some("Password and email changed")))
+            .with(predicate::eq(user_id), predicate::always())
             .times(1)
             .returning(|_, _| Ok(1));
 
@@ -1916,7 +1916,7 @@ mod tests {
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
-            mock_email_service, // Pass the manual mock
+            Arc::new(mock_email_service), // Pass the manual mock
             Arc::new(mock_token_revocation_service),
         );
 

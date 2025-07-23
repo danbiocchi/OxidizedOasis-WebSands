@@ -9,6 +9,7 @@ pub struct AppConfig {
 pub struct JwtConfig {
     pub secret: String,
     pub audience: String,
+    pub issuer: String,
 }
 
 #[derive(Clone)]
@@ -21,6 +22,13 @@ pub struct ServerConfig {
 pub struct DatabaseConfig {
     pub url: String,
     pub max_connections: u32,
+}
+
+impl DatabaseConfig {
+    #[cfg(test)]
+    pub async fn get_pool(&self) -> Result<sqlx::PgPool, sqlx::Error> {
+        sqlx::PgPool::connect(&self.url).await
+    }
 }
 
 impl AppConfig {
@@ -39,6 +47,8 @@ impl AppConfig {
             jwt: JwtConfig {
                 secret: std::env::var("JWT_SECRET")?,
                 audience: std::env::var("JWT_AUDIENCE")
+                    .unwrap_or_else(|_| "oxidizedoasis".to_string()),
+                issuer: std::env::var("JWT_ISSUER")
                     .unwrap_or_else(|_| "oxidizedoasis".to_string()),
             },
         })

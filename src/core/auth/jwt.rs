@@ -391,7 +391,15 @@ mod tests {
 
     #[test]
     fn test_jwt_generation_creates_valid_access_token_claims() {
-        setup_test_environment();
+        // Store original values
+        let original_access_exp = env::var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES").ok();
+        let original_refresh_exp = env::var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS").ok();
+        
+        // Explicitly set the values we want for this test
+        env::set_var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES", "1");
+        env::set_var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS", "1");
+        env::set_var("JWT_AUDIENCE", "test_aud");
+        env::set_var("JWT_ISSUER", "test_iss");
         let user_id = Uuid::new_v4();
         let role = "user".to_string();
         let token_type = TokenType::Access;
@@ -404,6 +412,8 @@ mod tests {
         let decoding_key = DecodingKey::from_secret(TEST_SECRET.as_ref());
         let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
         validation.leeway = 0;
+        validation.set_audience(&[&aud]);
+        validation.set_issuer(&[&iss]);
         let decoded_token = decode::<Claims>(&token_str, &decoding_key, &validation).unwrap();
         let claims = decoded_token.claims;
 
@@ -425,9 +435,9 @@ mod tests {
         assert!(claims.nbf <= now + 2 && claims.nbf >= now - 2, "nbf mismatch"); 
 
         let configured_minutes = env::var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES")
-            .unwrap_or_else(|_| "30".to_string()) // Default if not set, though test sets it to 1
+            .unwrap_or_else(|_| "1".to_string()) // Use 1 minute as set by setup_test_environment
             .parse::<i64>()
-            .unwrap_or(30);
+            .unwrap_or(1);
 
         let expected_duration_seconds = Duration::minutes(configured_minutes).num_seconds();
         let actual_duration_seconds = claims.exp - claims.iat;
@@ -441,6 +451,18 @@ mod tests {
             expected_duration_seconds, configured_minutes, actual_duration_seconds, claims.iat, claims.exp, now
         );
         assert_eq!(metadata.expires_at, timestamp_to_datetime(claims.exp));
+        
+        // Restore original values
+        if let Some(val) = original_access_exp {
+            env::set_var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES", val);
+        } else {
+            env::remove_var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES");
+        }
+        if let Some(val) = original_refresh_exp {
+            env::set_var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS", val);
+        } else {
+            env::remove_var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS");
+        }
     }
 
     #[test]
@@ -458,6 +480,8 @@ mod tests {
         let decoding_key = DecodingKey::from_secret(TEST_SECRET.as_ref());
         let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
         validation.leeway = 0;
+        validation.set_audience(&[&aud]);
+        validation.set_issuer(&[&iss]);
         let decoded_token = decode::<Claims>(&token_str, &decoding_key, &validation).unwrap();
         let claims = decoded_token.claims;
 
@@ -514,6 +538,8 @@ mod tests {
         let decoding_key = DecodingKey::from_secret(TEST_SECRET.as_ref());
         let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
         validation.leeway = 0;
+        validation.set_audience(&[&expected_aud]);
+        validation.set_issuer(&[&expected_iss]);
 
         let decoded_access_token =
             decode::<Claims>(&token_pair.access_token, &decoding_key, &validation).unwrap();
@@ -817,7 +843,7 @@ mod tests {
         let original_issuer = std::env::var("JWT_ISSUER").ok();
 
         std::env::remove_var("JWT_AUDIENCE"); // Ensure JWT_AUDIENCE is not set
-        std::env::set_var("JWT_ISSUER", "test_issuer_default_aud_test");
+        std::env::set_var("JWT_ISSUER", "default_issuer"); // Use the same default as create_token_pair
 
         let user_id = Uuid::new_v4();
         let role = "user_default_aud_test".to_string();
@@ -832,7 +858,7 @@ mod tests {
             secret,
             TokenType::Refresh,
             "oxidizedoasis".to_string(), // Explicitly use the default audience for the initial token
-            "test_issuer_default_aud_test".to_string(), // Explicitly use the issuer for initial token
+            "default_issuer".to_string(), // Use the same default as create_token_pair
         ).unwrap();
 
         let mock_revocation_service = Arc::new(MockTokenRevocationService);
@@ -859,19 +885,19 @@ mod tests {
             let decoding_key = DecodingKey::from_secret(secret.as_ref());
             let mut validation = Validation::default();
             validation.set_audience(&["oxidizedoasis"]);
-            validation.set_issuer(&["test_issuer_default_aud_test"]);
+            validation.set_issuer(&["default_issuer"]);
 
             let access_claims_result = decode::<Claims>(&new_token_pair.access_token, &decoding_key, &validation);
             assert!(access_claims_result.is_ok(), "Failed to decode new access token with default audience: {:?}", access_claims_result.err());
             let access_claims = access_claims_result.unwrap().claims;
             assert_eq!(access_claims.aud, "oxidizedoasis");
-            assert_eq!(access_claims.iss, "test_issuer_default_aud_test");
+            assert_eq!(access_claims.iss, "default_issuer");
 
             let refresh_claims_result = decode::<Claims>(&new_token_pair.refresh_token, &decoding_key, &validation);
             assert!(refresh_claims_result.is_ok(), "Failed to decode new refresh token with default audience: {:?}", refresh_claims_result.err());
             let refresh_claims = refresh_claims_result.unwrap().claims;
             assert_eq!(refresh_claims.aud, "oxidizedoasis");
-            assert_eq!(refresh_claims.iss, "test_issuer_default_aud_test");
+            assert_eq!(refresh_claims.iss, "default_issuer");
 
         }
 

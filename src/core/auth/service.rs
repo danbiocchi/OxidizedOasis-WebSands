@@ -421,7 +421,7 @@ impl AuthService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::user::{MockUserRepositoryTrait, NewUser, UserUpdate, PasswordResetToken};
+    use crate::core::user::{MockUserRepositoryTrait, NewUser, model::{UserUpdate, PasswordResetToken}};
     use crate::core::email::service::MockEmailServiceTrait;
     use crate::core::auth::jwt::{self, Claims, TokenType, TokenPair, TokenMetadata};
     use crate::core::auth::active_token::{MockActiveTokenServiceTrait, ActiveToken};

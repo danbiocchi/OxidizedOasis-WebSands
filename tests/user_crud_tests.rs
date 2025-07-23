@@ -6,14 +6,14 @@ mod tests {
     use uuid::Uuid;
     use chrono::Utc;
 
-    use crate::core::user::{User, UserRepositoryTrait, MockUserRepositoryTrait, UserError};
-    use crate::api::routes::admin::user_management::{
+    use oxidizedoasis_websands::core::user::{User, UserRepositoryTrait, MockUserRepositoryTrait, UserError};
+    use oxidizedoasis_websands::api::routes::admin::user_management::{
         update_user_role, update_user_status, UpdateRoleRequest, UpdateStatusRequest,
         list_users, get_user, delete_user, update_user_username, UpdateUsernameRequest
     };
-    use crate::core::auth::jwt::Claims;
-    use crate::api::error_handling::api_error_handler;
-    use crate::common::error::ApiErrorType;
+    use oxidizedoasis_websands::core::auth::jwt::{Claims, TokenType};
+    use oxidizedoasis_websands::api::error_handling::api_error_handler;
+    use oxidizedoasis_websands::common::error::ApiErrorType;
 
     // Helper function to create a mock user
     fn mock_user(id: Uuid, username: &str, role: &str, is_active: bool) -> User {
@@ -27,10 +27,8 @@ mod tests {
             is_email_verified: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            last_login_at: None,
             verification_token: None,
-            reset_password_token: None,
-            reset_password_token_expires_at: None,
+            verification_token_expires_at: None,
         }
     }
 
@@ -51,7 +49,7 @@ mod tests {
             nbf: Utc::now().timestamp(), // Added nbf
             jti: Uuid::new_v4().to_string(), // Added jti
             role: "admin".to_string(),
-            token_type: crate::core::auth::jwt::TokenType::Access, // Added token_type
+            token_type: TokenType::Access, // Added token_type
             aud: "test_aud".to_string(), // Added aud
             iss: "test_iss".to_string(), // Added iss
         };
@@ -105,7 +103,7 @@ mod tests {
             nbf: Utc::now().timestamp(), // Added nbf
             jti: Uuid::new_v4().to_string(), // Added jti
             role: "admin".to_string(),
-            token_type: crate::core::auth::jwt::TokenType::Access, // Added token_type
+            token_type: TokenType::Access, // Added token_type
             aud: "test_aud".to_string(), // Added aud
             iss: "test_iss".to_string(), // Added iss
         };
@@ -150,7 +148,7 @@ mod tests {
             nbf: Utc::now().timestamp(), // Added nbf
             jti: Uuid::new_v4().to_string(), // Added jti
             role: "admin".to_string(),
-            token_type: crate::core::auth::jwt::TokenType::Access, // Added token_type
+            token_type: TokenType::Access, // Added token_type
             aud: "test_aud".to_string(), // Added aud
             iss: "test_iss".to_string(), // Added iss
         };
@@ -204,7 +202,7 @@ mod tests {
             nbf: Utc::now().timestamp(), // Added nbf
             jti: Uuid::new_v4().to_string(), // Added jti
             role: "admin".to_string(),
-            token_type: crate::core::auth::jwt::TokenType::Access, // Added token_type
+            token_type: TokenType::Access, // Added token_type
             aud: "test_aud".to_string(), // Added aud
             iss: "test_iss".to_string(), // Added iss
         };
@@ -255,7 +253,7 @@ mod tests {
             nbf: Utc::now().timestamp(), // Added nbf
             jti: Uuid::new_v4().to_string(), // Added jti
             role: "admin".to_string(),
-            token_type: crate::core::auth::jwt::TokenType::Access, // Added token_type
+            token_type: TokenType::Access, // Added token_type
             aud: "test_aud".to_string(), // Added aud
             iss: "test_iss".to_string(), // Added iss
         };
