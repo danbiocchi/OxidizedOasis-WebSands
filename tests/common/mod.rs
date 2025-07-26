@@ -1,6 +1,5 @@
 //! Common test utilities and infrastructure
 
-use oxidizedoasis_websands::test_utils::create_test_config;
 use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::database::connection::create_pool;
 use sqlx::PgPool;
@@ -17,9 +16,160 @@ pub const TEST_JWT_SECRET: &str = "test_secret_key_for_comprehensive_testing_123
 pub const TEST_AUDIENCE: &str = "test_audience";
 pub const TEST_ISSUER: &str = "test_issuer";
 
+/// Generate a unique database name for each test to prevent race conditions
+fn generate_unique_database_name() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    
+    // Get current thread ID and timestamp for uniqueness
+    let thread_id = std::thread::current().id();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    
+    // Get atomic counter to ensure absolute uniqueness
+    let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
+    
+    // Format thread ID to be database-name safe (remove non-alphanumeric chars and convert to lowercase)
+    let thread_str = format!("{:?}", thread_id)
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>()
+        .to_lowercase();
+    
+    // Add UUID to ensure absolute uniqueness even if timestamp collides
+    let uuid_suffix = Uuid::new_v4().to_string().replace("-", "").chars().take(8).collect::<String>();
+    
+    // Create unique database name: test_oxidizedoasis_db_<thread>_<counter>_<timestamp>_<uuid>
+    format!("test_oxidizedoasis_db_{}_{}_{}_{}", thread_str, counter, timestamp % 1_000_000, uuid_suffix)
+}
+
+/// Create test configuration for integration tests with unique database names
+fn create_test_config() -> AppConfig {
+    let unique_db_name = generate_unique_database_name();
+    
+    // Build database URLs with the unique database name
+    let base_url = "postgres://dreamer@localhost:5432";
+    let database_url = format!("{}/{}", base_url, unique_db_name);
+    let su_database_url = format!("{}/{}", base_url, unique_db_name);
+    
+    // Set environment variables for this test's unique database
+    std::env::set_var("DATABASE_URL", format!("postgres://oxidizedoasis:pfut940AqIcy(B-HV*@localhost/{}", unique_db_name));
+    std::env::set_var("SU_DATABASE_URL", &su_database_url);
+    std::env::set_var("DB_NAME", &unique_db_name);
+    std::env::set_var("DB_USER", "oxidizedoasis");
+    std::env::set_var("ENVIRONMENT", "development");
+    std::env::set_var("JWT_SECRET", TEST_JWT_SECRET);
+    std::env::set_var("JWT_AUDIENCE", TEST_AUDIENCE);
+    std::env::set_var("JWT_ISSUER", TEST_ISSUER);
+    
+    println!("🔧 [create_test_config] Generated unique database: {}", unique_db_name);
+    
+    AppConfig {
+        server: oxidizedoasis_websands::infrastructure::config::app_config::ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: "8080".to_string(),
+        },
+        database: oxidizedoasis_websands::infrastructure::config::app_config::DatabaseConfig {
+            url: format!("postgres://oxidizedoasis:pfut940AqIcy(B-HV*@localhost/{}", unique_db_name),
+            max_connections: 5,
+        },
+        jwt: oxidizedoasis_websands::infrastructure::config::app_config::JwtConfig {
+            secret: TEST_JWT_SECRET.to_string(),
+            audience: TEST_AUDIENCE.to_string(),
+            issuer: TEST_ISSUER.to_string(),
+        },
+    }
+}
+
 /// Create test configuration for integration tests
 pub fn create_test_app_config() -> AppConfig {
     create_test_config()
+}
+
+/// Create test configuration with cleanup support - returns config and database name
+pub async fn create_test_config_with_cleanup() -> Result<(AppConfig, String), Box<dyn std::error::Error>> {
+    let unique_db_name = generate_unique_database_name();
+    
+    // Build database URLs with the unique database name
+    let base_url = "postgres://dreamer@localhost:5432";
+    let su_database_url = format!("{}/{}", base_url, unique_db_name);
+    
+    // Set environment variables for this test's unique database
+    std::env::set_var("DATABASE_URL", format!("postgres://oxidizedoasis:pfut940AqIcy(B-HV*@localhost/{}", unique_db_name));
+    std::env::set_var("SU_DATABASE_URL", &su_database_url);
+    std::env::set_var("DB_NAME", &unique_db_name);
+    std::env::set_var("DB_USER", "oxidizedoasis");
+    std::env::set_var("ENVIRONMENT", "development");
+    std::env::set_var("JWT_SECRET", TEST_JWT_SECRET);
+    std::env::set_var("JWT_AUDIENCE", TEST_AUDIENCE);
+    std::env::set_var("JWT_ISSUER", TEST_ISSUER);
+    
+    println!("🔧 [create_test_config_with_cleanup] Generated unique database: {}", unique_db_name);
+    
+    let config = AppConfig {
+        server: oxidizedoasis_websands::infrastructure::config::app_config::ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: "8080".to_string(),
+        },
+        database: oxidizedoasis_websands::infrastructure::config::app_config::DatabaseConfig {
+            url: format!("postgres://oxidizedoasis:pfut940AqIcy(B-HV*@localhost/{}", unique_db_name),
+            max_connections: 5,
+        },
+        jwt: oxidizedoasis_websands::infrastructure::config::app_config::JwtConfig {
+            secret: TEST_JWT_SECRET.to_string(),
+            audience: TEST_AUDIENCE.to_string(),
+            issuer: TEST_ISSUER.to_string(),
+        },
+    };
+    
+    // The create_pool function already handles database creation and migration setup
+    let _pool = create_pool(&config).await?;
+    
+    Ok((config, unique_db_name))
+}
+
+/// Cleanup test database after test completion
+pub async fn cleanup_test_database(db_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use sqlx::postgres::PgPoolOptions;
+    
+    // Connect to PostgreSQL server (not the test database)
+    let base_url = "postgres://dreamer@localhost:5432/postgres";
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(base_url)
+        .await?;
+    
+    // First, forcefully terminate any active connections to the database
+    let terminate_query = format!(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+        db_name
+    );
+    let _ = sqlx::query(&terminate_query)
+        .execute(&pool)
+        .await; // Ignore errors here as connections might already be closed
+    
+    // Wait a brief moment for connections to close
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    
+    // Drop the test database
+    let drop_query = format!("DROP DATABASE IF EXISTS \"{}\"", db_name);
+    sqlx::query(&drop_query)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("⚠️  [cleanup_test_database] Failed to drop database {}: {}", db_name, e);
+            e
+        })?;
+    
+    println!("🧹 [cleanup_test_database] Successfully dropped database: {}", db_name);
+    pool.close().await;
+    
+    Ok(())
 }
 
 /// Create test database pool for integration tests
@@ -187,7 +337,7 @@ pub mod env {
 /// Mock service factories
 pub mod mocks {
     use std::sync::Arc;
-    use oxidizedoasis_websands::core::user::MockUserRepositoryTrait;
+    use oxidizedoasis_websands::core::user::repository::MockUserRepositoryTrait;
     use oxidizedoasis_websands::core::email::service::MockEmailServiceTrait;
     use oxidizedoasis_websands::core::auth::token_revocation::MockTokenRevocationServiceTrait;
     use oxidizedoasis_websands::core::auth::active_token::MockActiveTokenServiceTrait;

@@ -74,7 +74,7 @@ pub async fn list_incidents(
 ) -> Result<HttpResponse, ApiError> {
     // TODO: Implement actual incident retrieval from database
     // This is a placeholder that returns an empty response
-    let page = query.page.unwrap_or(1);
+    let page = query.page.unwrap_or(1).max(1); // Ensure page is at least 1
     let per_page = query.per_page.unwrap_or(20).min(100);
 
     let response = IncidentListResponse {
@@ -118,18 +118,37 @@ pub async fn create_incident(
     Ok(HttpResponse::Created().json(incident))
 }
 
+pub async fn method_not_allowed() -> HttpResponse {
+    HttpResponse::MethodNotAllowed().json(serde_json::json!({
+        "message": "Method not allowed for this endpoint",
+        "error_type": "MethodNotAllowed"
+    }))
+}
+
 pub async fn get_incident(
-    _id: web::Path<Uuid>,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
+    // Validate UUID format first
+    let _id = match Uuid::parse_str(&path.into_inner()) {
+        Ok(uuid) => uuid,
+        Err(_) => return Err(ApiError::bad_request("Invalid UUID format")),
+    };
+    
     // TODO: Implement actual incident retrieval from database
     // This is a placeholder that returns a not found error
     Err(ApiError::not_found("Incident not found"))
 }
 
 pub async fn update_incident_status(
-    _id: web::Path<Uuid>,
+    path: web::Path<String>,
     _req: web::Json<UpdateIncidentStatusRequest>,
 ) -> Result<HttpResponse, ApiError> {
+    // Validate UUID format first
+    let _id = match Uuid::parse_str(&path.into_inner()) {
+        Ok(uuid) => uuid,
+        Err(_) => return Err(ApiError::bad_request("Invalid UUID format")),
+    };
+    
     // TODO: Implement actual incident status update in database
     // This is a placeholder that returns a not found error
     Err(ApiError::not_found("Incident not found"))

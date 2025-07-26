@@ -5,7 +5,7 @@ use crate::common::{
     validation::{LoginInput, RegisterInput},
 };
 use crate::core::user::{User, UserRepositoryTrait, NewUser}; 
-use std::sync::Arc;
+use std::{env, sync::Arc};
 use super::jwt::{self, Claims, TokenType, TokenPair, create_token_pair, TokenMetadata};
 use crate::core::auth::token_revocation::TokenRevocationServiceTrait;
 use crate::core::auth::active_token::ActiveTokenServiceTrait;
@@ -69,11 +69,17 @@ impl AuthService {
         }
 
         info!("Login: Generating token pair for user: {}", user.id);
-        let token_pair = create_token_pair(user.id, user.role.clone(), &self.jwt_secret)
-            .map_err(|e| {
-                warn!("Login: Failed to create token pair for user {}: {:?}", user.id, e);
-                AuthError::new(AuthErrorType::TokenCreationError)
-            })?;
+        let token_pair = jwt::create_token_pair_explicit(
+            user.id,
+            user.role.clone(),
+            &self.jwt_secret,
+            self.jwt_audience.clone(),
+            env::var("JWT_ISSUER").unwrap_or_else(|_| "default_issuer".to_string())
+        )
+        .map_err(|e| {
+            warn!("Login: Failed to create token pair for user {}: {:?}", user.id, e);
+            AuthError::new(AuthErrorType::TokenCreationError)
+        })?;
 
         if let Err(e) = self.record_tokens_for_user(user.id, &token_pair).await {
             warn!("Login: Failed to record tokens for user {}: {:?}", user.id, e);
@@ -111,11 +117,13 @@ impl AuthService {
     }
 
     pub async fn refresh_token(&self, refresh_token: &str) -> Result<TokenPair, AuthError> {
-        let token_pair = match jwt::refresh_token_pair(
+        let token_pair = match jwt::refresh_token_pair_explicit(
             self.token_revocation_service.clone(),
             self.active_token_service.clone(),
             refresh_token,
-            &self.jwt_secret
+            &self.jwt_secret,
+            self.jwt_audience.clone(),
+            env::var("JWT_ISSUER").unwrap_or_else(|_| "default_issuer".to_string())
         ).await {
             Ok(token_pair) => token_pair,
             Err(e) => {
@@ -492,6 +500,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_login_successful() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mut mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
         let test_username = "testuser";
@@ -530,10 +542,14 @@ mod tests {
         assert!(!token_pair.access_token.is_empty());
         assert!(!token_pair.refresh_token.is_empty());
 
-        let claims = jwt::validate_jwt(&mock_trs_arc, &token_pair.access_token, TEST_JWT_SECRET, Some(TokenType::Access), None, None).await.unwrap();
+        let claims = jwt::validate_jwt(&mock_trs_arc, &token_pair.access_token, TEST_JWT_SECRET, Some(TokenType::Access), Some("test_aud".to_string()), None).await.unwrap();
         assert_eq!(claims.sub, test_user_id);
         assert_eq!(claims.role, "user");
         assert_eq!(claims.aud, "test_aud"); // Add audience assertion
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]
@@ -668,6 +684,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_auth_successful() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mut mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
         let test_user = create_test_user(test_user_id, "testuser", true, "user");
@@ -678,12 +698,13 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(Some(cloned_user.clone())));
 
-        let token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
-        let token_str = token_pair.access_token;
         let test_aud = "test_aud".to_string(); // Define test audience
+        let test_iss = "test_issuer".to_string(); // Define test issuer
+        let token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
+        let token_str = token_pair.access_token;
  
          let (mock_trs_for_jwt_val, _) : (Arc<dyn TokenRevocationServiceTrait>, Arc<dyn ActiveTokenServiceTrait>) = setup_mock_services();
-        jwt::validate_jwt(&mock_trs_for_jwt_val, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some(test_aud.clone()), None).await.expect("Token for test_validate_auth_successful should be valid");
+        jwt::validate_jwt(&mock_trs_for_jwt_val, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some(test_aud.clone()), Some(test_iss.clone())).await.expect("Token for test_validate_auth_successful should be valid");
  
          let (mock_trs, mock_ats) = setup_mock_services();
         let auth_service = AuthService::new(
@@ -700,6 +721,10 @@ mod tests {
         let claims = result.unwrap();
         assert_eq!(claims.sub, test_user_id);
         assert_eq!(claims.role, "user");
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]
@@ -716,11 +741,13 @@ mod tests {
            setup_mock_email_service(),
        );
 
-        let token_pair_diff_secret = jwt::create_token_pair(Uuid::new_v4(), "user".to_string(), "a_different_secret").unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let token_pair_diff_secret = jwt::create_token_pair_explicit(Uuid::new_v4(), "user".to_string(), "a_different_secret", test_aud.clone(), test_iss.clone()).unwrap();
         let token_str = token_pair_diff_secret.access_token;
 
         let (fresh_mock_trs, _) : (Arc<dyn TokenRevocationServiceTrait>, Arc<dyn ActiveTokenServiceTrait>) = setup_mock_services();
-       jwt::validate_jwt(&fresh_mock_trs, &token_str, "a_different_secret", Some(TokenType::Access), Some("test_aud".to_string()), None).await.expect("Token created with different secret should be valid with that secret");
+       jwt::validate_jwt(&fresh_mock_trs, &token_str, "a_different_secret", Some(TokenType::Access), Some(test_aud.clone()), Some(test_iss.clone())).await.expect("Token created with different secret should be valid with that secret");
 
         let result = auth_service.validate_auth(&token_str).await;
        assert!(result.is_err());
@@ -730,6 +757,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_auth_user_not_found_by_id() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mut mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
 
@@ -738,11 +769,13 @@ mod tests {
             .times(1)
             .returning(|_| Ok(None));
 
-        let token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
         let token_str = token_pair.access_token;
 
         let (fresh_mock_trs, _) : (Arc<dyn TokenRevocationServiceTrait>, Arc<dyn ActiveTokenServiceTrait>) = setup_mock_services();
-       jwt::validate_jwt(&fresh_mock_trs, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some("test_aud".to_string()), None).await.expect("Token for test_validate_auth_user_not_found_by_id should be valid");
+       jwt::validate_jwt(&fresh_mock_trs, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some(test_aud.clone()), Some(test_iss.clone())).await.expect("Token for test_validate_auth_user_not_found_by_id should be valid");
 
         let (mock_trs, mock_ats) = setup_mock_services();
        let auth_service = AuthService::new(
@@ -758,10 +791,18 @@ mod tests {
         assert!(result.is_err());
         let auth_error = result.unwrap_err();
         assert_eq!(auth_error.error_type, AuthErrorType::InvalidToken);
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]
     async fn test_validate_auth_user_email_not_verified() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mut mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
         let test_user = create_test_user(test_user_id, "unverified_user_for_validate", false, "user");
@@ -772,11 +813,13 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(Some(cloned_user.clone())));
 
-        let token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
         let token_str = token_pair.access_token;
 
         let (fresh_mock_trs, _) : (Arc<dyn TokenRevocationServiceTrait>, Arc<dyn ActiveTokenServiceTrait>) = setup_mock_services();
-       jwt::validate_jwt(&fresh_mock_trs, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some("test_aud".to_string()), None).await.expect("Token for test_validate_auth_user_email_not_verified should be valid");
+       jwt::validate_jwt(&fresh_mock_trs, &token_str, TEST_JWT_SECRET, Some(TokenType::Access), Some(test_aud.clone()), Some(test_iss.clone())).await.expect("Token for test_validate_auth_user_email_not_verified should be valid");
 
         let (mock_trs, mock_ats) = setup_mock_services();
        let auth_service = AuthService::new(
@@ -792,10 +835,18 @@ mod tests {
         assert!(result.is_err());
         let auth_error = result.unwrap_err();
         assert_eq!(auth_error.error_type, AuthErrorType::EmailNotVerified);
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]
     async fn test_refresh_token_successful() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
 
@@ -824,7 +875,9 @@ mod tests {
             setup_mock_email_service(),
         );
 
-        let initial_token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let initial_token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
         let refresh_token_str = initial_token_pair.refresh_token;
 
         let result = auth_service.refresh_token(&refresh_token_str).await;
@@ -836,9 +889,13 @@ mod tests {
         assert_ne!(new_token_pair.refresh_token, refresh_token_str, "New refresh token should be different from the old one");
  
          let (fresh_mock_trs_val, _) : (Arc<dyn TokenRevocationServiceTrait>, Arc<dyn ActiveTokenServiceTrait>) = setup_mock_services();
-        let claims = jwt::validate_jwt(&fresh_mock_trs_val, &new_token_pair.access_token, TEST_JWT_SECRET, Some(TokenType::Access), Some("test_aud".to_string()), None).await.unwrap();
+        let claims = jwt::validate_jwt(&fresh_mock_trs_val, &new_token_pair.access_token, TEST_JWT_SECRET, Some(TokenType::Access), Some("test_aud".to_string()), Some("test_issuer".to_string())).await.unwrap();
         assert_eq!(claims.sub, test_user_id);
         assert_eq!(claims.aud, "test_aud"); // Add audience assertion
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]
@@ -917,7 +974,9 @@ mod tests {
            setup_mock_email_service(),
        );
 
-        let token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
 
         let result = auth_service.logout(&token_pair.access_token, Some(&token_pair.refresh_token)).await;
         assert!(result.is_ok());
@@ -961,7 +1020,9 @@ mod tests {
            setup_mock_email_service(),
        );
 
-        let token_pair = jwt::create_token_pair(test_user_id, "user".to_string(), TEST_JWT_SECRET).unwrap();
+        let test_aud = "test_aud".to_string();
+        let test_iss = "test_issuer".to_string();
+        let token_pair = jwt::create_token_pair_explicit(test_user_id, "user".to_string(), TEST_JWT_SECRET, test_aud.clone(), test_iss.clone()).unwrap();
 
         let result = auth_service.logout(&token_pair.access_token, None).await;
         assert!(result.is_ok());
@@ -1231,11 +1292,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_change_password_successful() {
+        // Set up environment variables for JWT
+        std::env::set_var("JWT_AUDIENCE", "test_aud");
+        std::env::set_var("JWT_ISSUER", "test_issuer");
+        
         let mut mock_user_repo = MockUserRepositoryTrait::new();
         let test_user_id = Uuid::new_v4();
         let old_password = "OldPassword123!";
         let new_password = "NewPassword123!";
-        let test_user = create_test_user(test_user_id, "passwordchangeuser", true, "user");
+        
+        // Create test user with the correct password hash for the old password
+        let test_user = User {
+            id: test_user_id,
+            username: "passwordchangeuser".to_string(),
+            email: Some("passwordchangeuser@example.com".to_string()),
+            password_hash: bcrypt::hash(old_password, bcrypt::DEFAULT_COST).unwrap(),
+            is_email_verified: true,
+            verification_token: None,
+            verification_token_expires_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            role: "user".to_string(),
+            is_active: true,
+        };
         let cloned_user = test_user.clone();
 
         mock_user_repo.expect_find_by_id()
@@ -1265,6 +1344,10 @@ mod tests {
 
         let result = auth_service.change_password(test_user_id, old_password.to_string(), new_password.to_string()).await;
         assert!(result.is_ok());
+        
+        // Clean up environment variables
+        std::env::remove_var("JWT_AUDIENCE");
+        std::env::remove_var("JWT_ISSUER");
     }
 
     #[tokio::test]

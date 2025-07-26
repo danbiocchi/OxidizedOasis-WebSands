@@ -61,17 +61,24 @@ impl Component for AccountSettings {
     type Properties = ();
 
     fn create(ctx: &Context<Self>) -> Self {
-        // Load user data when component is created
+        // Load user data when component is created using RequestInterceptor
         let link = ctx.link().clone();
         spawn_local(async move {
-            let response = Request::get("/api/cookie/users/me").send().await;
-            let result = match response {
-                Ok(resp) => {
-                    // resp.json().await returns Result<serde_json::Value, gloo::net::Error>
-                    // We need to map the inner error to String as well
-                    resp.json().await.map_err(|e| e.to_string())
+            gloo::console::log!("🔍 DEBUG: AccountSettings loading user data");
+            
+            let result = match crate::services::request::RequestInterceptor::get("/api/cookie/users/me")
+                .send_with_retry().await {
+                Ok(response) => {
+                    gloo::console::log!("🔍 DEBUG: AccountSettings got response, parsing JSON");
+                    response.json().await.map_err(|e| {
+                        gloo::console::log!("🔍 DEBUG: JSON parse error:", &e.to_string());
+                        e.to_string()
+                    })
                 },
-                Err(e) => Err(e.to_string()),
+                Err(e) => {
+                    gloo::console::log!("🔍 DEBUG: AccountSettings request failed:", &e);
+                    Err(e)
+                },
             };
             link.send_message(Msg::UserLoaded(result));
         });
@@ -203,23 +210,30 @@ impl Component for AccountSettings {
                 let user_id = self.user_id.clone().unwrap_or_default(); // Get user ID
                 let link = ctx.link().clone();
                 spawn_local(async move {
+                    gloo::console::log!("🔍 DEBUG: AccountSettings updating profile");
+                    
                     let update_payload = json!({
                         "username": username,
                         "email": email,
                     });
 
-                    let response = Request::put(&format!("/api/cookie/users/{}", user_id))
+                    let result = match crate::services::request::RequestInterceptor::put(&format!("/api/cookie/users/{}", user_id))
                         .header("Content-Type", "application/json")
                         .json(&update_payload)
                         .expect("Failed to build request")
-                        .send()
-                        .await;
-
-                    let result = match response {
-                        Ok(resp) => {
-                            resp.json().await.map_err(|e| e.to_string())
+                        .send_with_retry()
+                        .await {
+                        Ok(response) => {
+                            gloo::console::log!("🔍 DEBUG: AccountSettings update response received, parsing JSON");
+                            response.json().await.map_err(|e| {
+                                gloo::console::log!("🔍 DEBUG: Update JSON parse error:", &e.to_string());
+                                e.to_string()
+                            })
                         },
-                        Err(e) => Err(e.to_string()),
+                        Err(e) => {
+                            gloo::console::log!("🔍 DEBUG: AccountSettings update request failed:", &e);
+                            Err(e)
+                        },
                     };
                     link.send_message(Msg::ProfileUpdateResponse(result));
                 });

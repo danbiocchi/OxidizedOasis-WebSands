@@ -1,7 +1,8 @@
 //! Comprehensive middleware testing
 //! Tests authentication, authorization, CORS, and other middleware components
 
-use actix_web::{test, web, App, http::StatusCode, cookie::Cookie};
+use actix_web::{test, web, App, http::StatusCode, cookie::Cookie, HttpMessage, FromRequest};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -74,22 +75,26 @@ mod auth_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.app_config))
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.app_config))
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
 
-                let bearer_auth = BearerAuth::new(fixture.valid_user_token);
-                
-                let result = jwt_auth_validator(req, bearer_auth).await;
-                assert!(result.is_ok());
-                
-                let validated_req = result.unwrap();
-                let claims = validated_req.extensions().get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
-                assert!(claims.is_some());
-            })
+            // Create BearerAuth using from_request
+            let auth_req = test::TestRequest::default()
+                .insert_header(("Authorization", format!("Bearer {}", fixture.valid_user_token)))
+                .to_srv_request();
+            let (http_req, mut payload) = auth_req.into_parts();
+            let bearer_auth = BearerAuth::from_request(&http_req, &mut payload).await.unwrap();
+            
+            let result = jwt_auth_validator(req, bearer_auth).await;
+            assert!(result.is_ok());
+            
+            let validated_req = result.unwrap();
+            let extensions = validated_req.extensions();
+            let claims = extensions.get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
+            assert!(claims.is_some());
         });
     }
 
@@ -101,22 +106,25 @@ mod auth_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.app_config))
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.app_config))
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
 
-                let bearer_auth = BearerAuth::new(fixture.invalid_token);
-                
-                let result = jwt_auth_validator(req, bearer_auth).await;
-                assert!(result.is_err());
-                
-                let (error, _) = result.unwrap_err();
-                let response = error.error_response();
-                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-            })
+            // Create BearerAuth using from_request
+            let auth_req = test::TestRequest::default()
+                .insert_header(("Authorization", format!("Bearer {}", fixture.invalid_token)))
+                .to_srv_request();
+            let (http_req, mut payload) = auth_req.into_parts();
+            let bearer_auth = BearerAuth::from_request(&http_req, &mut payload).await.unwrap();
+            
+            let result = jwt_auth_validator(req, bearer_auth).await;
+            assert!(result.is_err());
+            
+            let (error, _) = result.unwrap_err();
+            let response = error.error_response();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         });
     }
 
@@ -128,21 +136,20 @@ mod auth_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .cookie(Cookie::new("access_token", fixture.valid_user_token.clone()))
-                    .app_data(web::Data::new(fixture.app_config))
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
-                
-                let result = cookie_auth_validator(req).await;
-                assert!(result.is_ok());
-                
-                let validated_req = result.unwrap();
-                let claims = validated_req.extensions().get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
-                assert!(claims.is_some());
-            })
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .cookie(Cookie::new("access_token", fixture.valid_user_token.clone()))
+                .app_data(web::Data::new(fixture.app_config))
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
+            
+            let result = cookie_auth_validator(req).await;
+            assert!(result.is_ok());
+            
+            let validated_req = result.unwrap();
+            let extensions = validated_req.extensions();
+            let claims = extensions.get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
+            assert!(claims.is_some());
         });
     }
 
@@ -154,20 +161,18 @@ mod auth_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.app_config))
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
-                
-                let result = cookie_auth_validator(req).await;
-                assert!(result.is_err());
-                
-                let (error, _) = result.unwrap_err();
-                let response = error.error_response();
-                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-            })
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.app_config))
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
+            
+            let result = cookie_auth_validator(req).await;
+            assert!(result.is_err());
+            
+            let (error, _) = result.unwrap_err();
+            let response = error.error_response();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         });
     }
 }
@@ -186,22 +191,26 @@ mod admin_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
 
-                let bearer_auth = BearerAuth::new(fixture.valid_admin_token);
-                
-                let result = admin_validator(req, bearer_auth).await;
-                assert!(result.is_ok());
-                
-                let validated_req = result.unwrap();
-                let claims = validated_req.extensions().get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
-                assert!(claims.is_some());
-                assert_eq!(claims.unwrap().role, "admin");
-            })
+            // Create BearerAuth using from_request
+            let auth_req = test::TestRequest::default()
+                .insert_header(("Authorization", format!("Bearer {}", fixture.valid_admin_token)))
+                .to_srv_request();
+            let (http_req, mut payload) = auth_req.into_parts();
+            let bearer_auth = BearerAuth::from_request(&http_req, &mut payload).await.unwrap();
+            
+            let result = admin_validator(req, bearer_auth).await;
+            assert!(result.is_ok());
+            
+            let validated_req = result.unwrap();
+            let extensions = validated_req.extensions();
+            let claims = extensions.get::<oxidizedoasis_websands::core::auth::jwt::Claims>();
+            assert!(claims.is_some());
+            assert_eq!(claims.unwrap().role, "admin");
         });
     }
 
@@ -213,21 +222,24 @@ mod admin_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
 
-                let bearer_auth = BearerAuth::new(fixture.valid_user_token);
-                
-                let result = admin_validator(req, bearer_auth).await;
-                assert!(result.is_err());
-                
-                let (error, _) = result.unwrap_err();
-                let response = error.error_response();
-                assert_eq!(response.status(), StatusCode::FORBIDDEN);
-            })
+            // Create BearerAuth using from_request
+            let auth_req = test::TestRequest::default()
+                .insert_header(("Authorization", format!("Bearer {}", fixture.valid_user_token)))
+                .to_srv_request();
+            let (http_req, mut payload) = auth_req.into_parts();
+            let bearer_auth = BearerAuth::from_request(&http_req, &mut payload).await.unwrap();
+            
+            let result = admin_validator(req, bearer_auth).await;
+            assert!(result.is_err());
+            
+            let (error, _) = result.unwrap_err();
+            let response = error.error_response();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
         });
     }
 
@@ -239,21 +251,24 @@ mod admin_middleware_tests {
             ("JWT_SECRET", TEST_JWT_SECRET),
         ]);
 
-        with_env_vars(env_vars, || {
-            tokio::spawn(async move {
-                let req = test::TestRequest::default()
-                    .app_data(web::Data::new(fixture.token_revocation_service))
-                    .to_srv_request();
+        with_env_vars(env_vars, || async {
+            let req = test::TestRequest::default()
+                .app_data(web::Data::new(fixture.token_revocation_service))
+                .to_srv_request();
 
-                let bearer_auth = BearerAuth::new(fixture.invalid_token);
-                
-                let result = admin_validator(req, bearer_auth).await;
-                assert!(result.is_err());
-                
-                let (error, _) = result.unwrap_err();
-                let response = error.error_response();
-                assert_eq!(response.status(), StatusCode::FORBIDDEN);
-            })
+            // Create BearerAuth using from_request
+            let auth_req = test::TestRequest::default()
+                .insert_header(("Authorization", format!("Bearer {}", fixture.invalid_token)))
+                .to_srv_request();
+            let (http_req, mut payload) = auth_req.into_parts();
+            let bearer_auth = BearerAuth::from_request(&http_req, &mut payload).await.unwrap();
+            
+            let result = admin_validator(req, bearer_auth).await;
+            assert!(result.is_err());
+            
+            let (error, _) = result.unwrap_err();
+            let response = error.error_response();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
         });
     }
 }

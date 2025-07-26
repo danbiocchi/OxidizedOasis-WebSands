@@ -11,19 +11,19 @@ use crate::core::auth::jwt::Claims;
 
 use log::debug;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct UpdateRoleRequest {
-    role: String,
+    pub role: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct UpdateUsernameRequest {
-    username: String,
+    pub username: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct UpdateStatusRequest {
-    is_active: bool,
+    pub is_active: bool,
 }
 
 #[derive(Serialize)]
@@ -106,19 +106,23 @@ pub async fn update_user_role(
     repo: web::Data<Arc<dyn UserRepositoryTrait>>,
     claims: Option<web::ReqData<Claims>>,
 ) -> Result<HttpResponse, ApiError> {
-    debug!("Handling PUT /api/admin/users/{}/role -> update_user_role with role: {}",
-           id, req.role);
+    debug!("🔍 [update_user_role] START: id={}, role={}", id, req.role);
+    debug!("🔍 [update_user_role] Claims present: {}", claims.is_some());
     
     // Check if user is trying to edit their own account
     if let Some(claims) = claims {
+        debug!("🔍 [update_user_role] Claims found - user_id: {}, target_id: {}", claims.sub, *id);
         // The sub field in Claims is already a Uuid
         if claims.sub == *id {
-            debug!("User {} attempted to edit their own role", id);
+            debug!("🔍 [update_user_role] Self-edit detected for user {}", id);
             return Err(ApiError::new(
                 "You cannot edit your own account. This could lead to session inconsistency issues.",
                 ApiErrorType::Authorization
             ));
         }
+        debug!("🔍 [update_user_role] Self-edit check passed - proceeding with role update");
+    } else {
+        debug!("⚠️ [update_user_role] No claims found - this shouldn't happen in admin routes");
     }
     
     // Validate role

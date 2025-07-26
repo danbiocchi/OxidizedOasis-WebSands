@@ -355,13 +355,22 @@ impl Dashboard {
 }
 
 async fn fetch_user_info() -> Result<User, String> {
+    log!("fetch_user_info: Starting user info fetch");
+    log!("fetch_user_info: Checking authentication status");
+    
+    // Check if we have auth tokens before making the request
+    let is_auth = crate::services::auth::is_authenticated();
+    log!("fetch_user_info: Authentication status: {}", is_auth);
+    
     // Use the RequestInterceptor to handle token refresh automatically
+    log!("fetch_user_info: Making request to /api/cookie/users/me");
     let response = RequestInterceptor::get("/api/cookie/users/me")
         .send_with_retry()
         .await?;
     
+    log!("fetch_user_info: Response status: {}", response.status());
     let response_text = response.text().await.map_err(|e| e.to_string())?;
-    log!("User info response: {}", &response_text);
+    log!("fetch_user_info: User info response: {}", &response_text);
 
     // Parse the response as a JSON Value first to handle CSRF token
     let data_value: serde_json::Value = serde_json::from_str(&response_text)

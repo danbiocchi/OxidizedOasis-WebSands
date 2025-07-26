@@ -694,6 +694,7 @@ mod tests {
     }
     
     #[tokio::test]
+    #[ignore] // Skip by default since it requires a test database
     async fn test_update_email_and_set_unverified_success() {
         let repo = setup_test_repository().await;
         repo.clear_all().await.unwrap(); // Clear previous test data
@@ -734,6 +735,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Skip by default since it requires a test database
     async fn test_find_by_email_and_verified_found() {
         let repo = setup_test_repository().await;
         repo.clear_all().await.unwrap();
@@ -764,6 +766,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Skip by default since it requires a test database
     async fn test_find_by_email_and_verified_not_found_if_unverified() {
         let repo = setup_test_repository().await;
         repo.clear_all().await.unwrap();
@@ -788,6 +791,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Skip by default since it requires a test database
     async fn test_find_by_email_and_verified_not_found_for_nonexistent_email() {
         let repo = setup_test_repository().await;
         repo.clear_all().await.unwrap(); // Ensure clean state

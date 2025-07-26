@@ -9,22 +9,36 @@ use crate::core::auth::jwt::{validate_jwt, TokenType};
 use crate::core::auth::token_revocation::TokenRevocationServiceTrait; // Import the trait
 
 #[derive(Debug)]
-pub struct AdminError {
-    pub message: String,
+pub enum AdminError {
+    Unauthorized(String),
+    Forbidden(String),
 }
 
 impl fmt::Display for AdminError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
+        match self {
+            AdminError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
+            AdminError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
+        }
     }
 }
 
 impl ResponseError for AdminError {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::Forbidden().json(json!({
-            "error": "Forbidden",
-            "message": self.message
-        }))
+        match self {
+            AdminError::Unauthorized(message) => {
+                HttpResponse::Unauthorized().json(json!({
+                    "error": "Unauthorized",
+                    "message": message
+                }))
+            },
+            AdminError::Forbidden(message) => {
+                HttpResponse::Forbidden().json(json!({
+                    "error": "Forbidden",
+                    "message": message
+                }))
+            }
+        }
     }
 }
 
@@ -37,26 +51,33 @@ pub async fn admin_validator(req: ServiceRequest, credentials: BearerAuth) -> Re
     let token_revocation_service = req.app_data::<web::Data<Arc<dyn TokenRevocationServiceTrait>>>().cloned();
     if token_revocation_service.is_none() {
         error!("TokenRevocationService not found in app_data for admin_validator");
-        return Err((AdminError {
-            message: "Internal server configuration error".to_string()
-        }.into(), req));
+        return Err((AdminError::Forbidden(
+            "Internal server configuration error".to_string()
+        ).into(), req));
     }
     let token_revocation_service = token_revocation_service.unwrap().into_inner(); // Get Arc<dyn Trait>
 
     debug!("Attempting to validate token for admin access");
 
+    // Get expected audience and issuer for token validation
+    let expected_audience = std::env::var("JWT_AUDIENCE").ok();
+    let expected_issuer = std::env::var("JWT_ISSUER").ok();
+    
+    debug!("Admin middleware - expected_audience: {:?}, expected_issuer: {:?}", expected_audience, expected_issuer);
+    eprintln!("🔍 ADMIN MIDDLEWARE DEBUG - expected_audience: {:?}, expected_issuer: {:?}", expected_audience, expected_issuer);
+    
     // Validate as an access token - we don't accept refresh tokens for API access
-    let validation_result = validate_jwt(&token_revocation_service, token, &jwt_secret, Some(TokenType::Access), None, None).await;
+    let validation_result = validate_jwt(&token_revocation_service, token, &jwt_secret, Some(TokenType::Access), expected_audience, expected_issuer).await;
     
     match validation_result {
         Ok(claims) => {
             // Check if the user has admin role
             if claims.role != "admin" {
-                error!("Access denied: User {} with role {} attempted to access admin endpoint", 
+                error!("Access denied: User {} with role {} attempted to access admin endpoint",
                        claims.sub, claims.role);
-                return Err((AdminError {
-                    message: "Access denied: Insufficient privileges".to_string()
-                }.into(), req));
+                return Err((AdminError::Forbidden(
+                    "Access denied: Insufficient privileges".to_string()
+                ).into(), req));
             }
             
             // Check token expiration time and warn if it's close to expiring
@@ -74,9 +95,9 @@ pub async fn admin_validator(req: ServiceRequest, credentials: BearerAuth) -> Re
         },
         Err(e) => {
             error!("Token validation failed: {:?}", e);
-            Err((AdminError {
-                message: "Invalid or expired token".to_string()
-            }.into(), req))
+            Err((AdminError::Unauthorized(
+                "Invalid or expired token".to_string()
+            ).into(), req))
         },
     }
 }
@@ -111,7 +132,11 @@ mod tests {
         F: FnOnce() -> Fut,
         Fut: std::future::Future,
     {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|poisoned| {
+            // Clear the poison and continue - this allows tests to recover from panics
+            let guard = poisoned.into_inner();
+            guard
+        });
         let mut original_values = Vec::new();
 
         // Store original values
@@ -154,12 +179,12 @@ mod tests {
         }
     }
 
-    fn create_test_claims_for_middleware(user_id: Uuid, role: &str, exp_duration_secs: i64) -> Claims {
+    fn create_test_claims_for_middleware(user_id: Uuid, role: &str, exp_duration_secs: i64, aud: &str, iss: &str) -> Claims {
         let now = Utc::now();
         let iat_ts = now.timestamp();
         Claims { // Added aud and iss fields
-            aud: "".to_string(), // Placeholder, actual audience should come from validated token
-            iss: "".to_string(), // Placeholder, actual issuer should come from validated token
+            aud: aud.to_string(),
+            iss: iss.to_string(),
             sub: user_id,
             role: role.to_string(),
             exp: (now + Duration::seconds(exp_duration_secs)).timestamp(),
@@ -171,8 +196,8 @@ mod tests {
     }
 
     // generate_test_token using the helper for claims
-    fn generate_test_token_middleware(user_id: Uuid, role: &str, secret: &str, exp_duration_secs: i64) -> String {
-        let claims = create_test_claims_for_middleware(user_id, role, exp_duration_secs);
+    fn generate_test_token_middleware(user_id: Uuid, role: &str, secret: &str, exp_duration_secs: i64, aud: &str, iss: &str) -> String {
+        let claims = create_test_claims_for_middleware(user_id, role, exp_duration_secs, aud, iss);
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &claims,
@@ -182,16 +207,25 @@ mod tests {
 
     #[actix_rt::test] // Make this test async
     async fn test_admin_error_response() {
-        let admin_error = AdminError { message: "Test error message".to_string() };
-        let http_response = admin_error.error_response(); // This is HttpResponse
-        assert_eq!(http_response.status(), StatusCode::FORBIDDEN);
+        let admin_error_forbidden = AdminError::Forbidden("Test forbidden message".to_string());
+        let http_response_forbidden = admin_error_forbidden.error_response();
+        assert_eq!(http_response_forbidden.status(), StatusCode::FORBIDDEN);
 
-        // Convert HttpResponse to ServiceResponse for read_body_json
-        let srv_res = test::TestRequest::default().to_srv_response(http_response);
-        let body = test::read_body_json::<Value, _>(srv_res).await; // Await the future
+        let srv_res_forbidden = test::TestRequest::default().to_srv_response(http_response_forbidden);
+        let body_forbidden = test::read_body_json::<Value, _>(srv_res_forbidden).await;
 
-        assert_eq!(body["error"], "Forbidden");
-        assert_eq!(body["message"], "Test error message");
+        assert_eq!(body_forbidden["error"], "Forbidden");
+        assert_eq!(body_forbidden["message"], "Test forbidden message");
+
+        let admin_error_unauthorized = AdminError::Unauthorized("Test unauthorized message".to_string());
+        let http_response_unauthorized = admin_error_unauthorized.error_response();
+        assert_eq!(http_response_unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let srv_res_unauthorized = test::TestRequest::default().to_srv_response(http_response_unauthorized);
+        let body_unauthorized = test::read_body_json::<Value, _>(srv_res_unauthorized).await;
+
+        assert_eq!(body_unauthorized["error"], "Unauthorized");
+        assert_eq!(body_unauthorized["message"], "Test unauthorized message");
     }
     
     #[actix_rt::test]
@@ -203,7 +237,9 @@ mod tests {
         let app_data_revocation_service = Data::new(Arc::new(mock_revocation_service) as Arc<dyn TokenRevocationServiceTrait>);
         
         let user_id = Uuid::new_v4();
-        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600);
+        let test_aud = "test_aud";
+        let test_iss = "test_iss";
+        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600, test_aud, test_iss);
 
         // Create a ServiceRequest for extracting BearerAuth
         let srv_req_for_extraction = test::TestRequest::default()
@@ -218,7 +254,11 @@ mod tests {
             // No need to set auth header here as admin_validator receives BearerAuth directly
             .to_srv_request();
         
-        let env_vars = vec![("JWT_SECRET", Some(TEST_JWT_SECRET))];
+        let env_vars = vec![
+            ("JWT_SECRET", Some(TEST_JWT_SECRET)),
+            ("JWT_AUDIENCE", Some(test_aud)),
+            ("JWT_ISSUER", Some(test_iss))
+        ];
         run_test_with_env_vars(env_vars, || async {
             let result = admin_validator(srv_req_for_validator, bearer_auth).await;
             assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
@@ -247,7 +287,9 @@ mod tests {
         let app_data_revocation_service = Data::new(Arc::new(mock_revocation_service) as Arc<dyn TokenRevocationServiceTrait>);
 
         let user_id = Uuid::new_v4();
-        let token_str = generate_test_token_middleware(user_id, "user", TEST_JWT_SECRET, 3600);
+        let test_aud = "test_aud";
+        let test_iss = "test_iss";
+        let token_str = generate_test_token_middleware(user_id, "user", TEST_JWT_SECRET, 3600, test_aud, test_iss);
 
         let srv_req_for_extraction = test::TestRequest::default()
             .insert_header((AUTHORIZATION, format!("Bearer {}", token_str)))
@@ -259,7 +301,11 @@ mod tests {
             .app_data(app_data_revocation_service.clone())
             .to_srv_request();
 
-        let env_vars = vec![("JWT_SECRET", Some(TEST_JWT_SECRET))];
+        let env_vars = vec![
+            ("JWT_SECRET", Some(TEST_JWT_SECRET)),
+            ("JWT_AUDIENCE", Some(test_aud)),
+            ("JWT_ISSUER", Some(test_iss))
+        ];
         run_test_with_env_vars(env_vars, || async {
             let result = admin_validator(srv_req_for_validator, bearer_auth).await;
             assert!(result.is_err(), "Expected Err for non-admin token");
@@ -281,7 +327,9 @@ mod tests {
         let app_data_revocation_service = Data::new(Arc::new(mock_revocation_service) as Arc<dyn TokenRevocationServiceTrait>);
 
         let user_id = Uuid::new_v4();
-        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600);
+        let test_aud = "test_aud";
+        let test_iss = "test_iss";
+        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600, test_aud, test_iss);
 
         let srv_req_for_extraction = test::TestRequest::default()
             .insert_header((AUTHORIZATION, format!("Bearer {}", token_str)))
@@ -299,18 +347,20 @@ mod tests {
             assert!(result.is_err(), "Expected Err for revoked token");
             let (err, _) = result.err().unwrap();
             let http_response = err.error_response();
-            assert_eq!(http_response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(http_response.status(), StatusCode::UNAUTHORIZED);
             let srv_res = test::TestRequest::default().to_srv_response(http_response); // Convert to ServiceResponse
             let body = test::read_body_json::<serde_json::Value, _>(srv_res).await;
-            assert_eq!(body["error"], "Forbidden");
-            assert_eq!(body["message"], "Invalid or expired token"); 
+            assert_eq!(body["error"], "Unauthorized");
+            assert_eq!(body["message"], "Invalid or expired token");
         }).await;
     }
     
     #[actix_rt::test]
     async fn test_admin_validator_revocation_service_missing_in_app_data() {
         let user_id = Uuid::new_v4();
-        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600);
+        let test_aud = "test_aud";
+        let test_iss = "test_iss";
+        let token_str = generate_test_token_middleware(user_id, "admin", TEST_JWT_SECRET, 3600, test_aud, test_iss);
 
         let srv_req_for_extraction = test::TestRequest::default()
             .insert_header((AUTHORIZATION, format!("Bearer {}", token_str)))

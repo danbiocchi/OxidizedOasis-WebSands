@@ -3,9 +3,9 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use crate::infrastructure::middleware::{admin_validator, CookieAuth, csrf::CsrfProtection};
 use log::debug;
 
-mod user_management;
-mod logs;
-mod security;
+pub mod user_management;
+pub mod logs;
+pub mod security;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     debug!("Configuring admin routes");
@@ -35,6 +35,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
                     .route("/incidents", web::post().to(security::create_incident))
                     .route("/incidents/{id}", web::get().to(security::get_incident))
                     .route("/incidents/{id}/status", web::put().to(security::update_incident_status))
+                    .default_service(web::route().to(security::method_not_allowed))
             )
     );
     

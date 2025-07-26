@@ -1,232 +1,378 @@
-#[cfg(test)]
-mod tests {
-    use actix_web::{test, web, App, http::StatusCode};
-    use serde_json::json;
-    use std::sync::Arc;
-    use uuid::Uuid;
-    use chrono::Utc;
+//! User CRUD integration tests with proper authentication middleware setup
 
-    use oxidizedoasis_websands::core::user::{User, UserRepositoryTrait, MockUserRepositoryTrait, UserError};
-    use oxidizedoasis_websands::api::routes::admin::user_management::{
-        update_user_role, update_user_status, UpdateRoleRequest, UpdateStatusRequest,
-        list_users, get_user, delete_user, update_user_username, UpdateUsernameRequest
-    };
-    use oxidizedoasis_websands::core::auth::jwt::{Claims, TokenType};
-    use oxidizedoasis_websands::api::error_handling::api_error_handler;
-    use oxidizedoasis_websands::common::error::ApiErrorType;
+use actix_web::{test, web, App, http::StatusCode};
+use serde_json::{json, Value};
+use std::sync::Arc;
+use uuid::Uuid;
+use chrono::Utc;
 
-    // Helper function to create a mock user
-    fn mock_user(id: Uuid, username: &str, role: &str, is_active: bool) -> User {
-        User {
-            id,
-            username: username.to_string(),
-            email: Some(format!("{}@example.com", username)),
-            password_hash: "hashed_password".to_string(),
-            role: role.to_string(),
-            is_active,
-            is_email_verified: true,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            verification_token: None,
-            verification_token_expires_at: None,
+use oxidizedoasis_websands::core::user::{User, UserRepositoryTrait, UserError};
+use oxidizedoasis_websands::core::user::repository::MockUserRepositoryTrait;
+use oxidizedoasis_websands::api::routes::admin::user_management::{
+    update_user_role, update_user_status, UpdateRoleRequest, UpdateStatusRequest,
+    list_users, get_user, delete_user, update_user_username, UpdateUsernameRequest
+};
+use oxidizedoasis_websands::core::auth::{AuthService};
+use oxidizedoasis_websands::core::auth::active_token::ActiveTokenService;
+use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationService;
+use oxidizedoasis_websands::core::email::service::EmailService;
+use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
+use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
+use actix_web_httpauth::middleware::HttpAuthentication;
+use oxidizedoasis_websands::common::error::ApiErrorType;
+
+mod common;
+use common::{
+    create_test_app_config, create_test_user, generate_test_token,
+    test_data::*, http::*, env::with_env_vars, mocks::*
+};
+
+/// Test fixture for user CRUD tests
+struct UserCrudTestFixture {
+    config: AppConfig,
+    test_user_id: Uuid,
+    test_admin_id: Uuid,
+    test_target_user_id: Uuid,
+    test_admin_token: String,
+}
+
+impl UserCrudTestFixture {
+    async fn new() -> Self {
+        // Ensure environment variables are set before generating tokens
+        use std::sync::Mutex;
+        static ENV_SETUP_MUTEX: Mutex<()> = Mutex::new(());
+        
+        let _lock = ENV_SETUP_MUTEX.lock().unwrap();
+        
+        // Set up environment variables consistently
+        std::env::set_var("JWT_SECRET", common::TEST_JWT_SECRET);
+        std::env::set_var("JWT_AUDIENCE", common::TEST_AUDIENCE);
+        std::env::set_var("JWT_ISSUER", common::TEST_ISSUER);
+        
+        let config = create_test_app_config();
+        let test_user_id = Uuid::new_v4();
+        let test_admin_id = Uuid::new_v4();
+        let test_target_user_id = Uuid::new_v4();
+        
+        let test_admin_token = generate_test_token(test_admin_id, "admin", 3600)
+            .expect("Failed to generate admin token");
+
+        Self {
+            config,
+            test_user_id,
+            test_admin_id,
+            test_target_user_id,
+            test_admin_token,
         }
     }
+}
+
+// Helper function to create a mock user
+fn mock_user(id: Uuid, username: &str, role: &str, is_active: bool) -> User {
+    User {
+        id,
+        username: username.to_string(),
+        email: Some(format!("{}@example.com", username)),
+        password_hash: "hashed_password".to_string(),
+        role: role.to_string(),
+        is_active,
+        is_email_verified: true,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        verification_token: None,
+        verification_token_expires_at: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[actix_rt::test]
     async fn test_update_user_role_self_edit_forbidden() {
-        let admin_user_id = Uuid::new_v4();
-        let mut mock_repo = MockUserRepositoryTrait::new();
-
+        let fixture = UserCrudTestFixture::new().await;
+        
+        // Create mock services
+        let mut user_repo = create_mock_user_repository();
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        // Set up user repository expectations
+        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
+        let test_admin_id = fixture.test_admin_id;
+        
         // Mock repo expectations (not strictly needed for this test as it should fail before DB ops)
-        mock_repo.expect_update_role().times(0); // Ensure no DB call is made
+        user_repo.expect_update_role().times(0); // Ensure no DB call is made
+        
+        // Mock find_by_id for authentication
+        user_repo.expect_find_by_id()
+            .returning(move |id| {
+                if id == test_admin_id {
+                    Ok(Some(test_admin.clone()))
+                } else {
+                    Ok(None)
+                }
+            });
 
-        let app_state_repo = Arc::new(mock_repo);
+        let user_repo_arc = Arc::new(user_repo);
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo_arc.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
 
-        let claims = Claims {
-            sub: admin_user_id, // Admin's own ID
-            exp: (Utc::now() + chrono::Duration::days(1)).timestamp(), // Changed to i64
-            iat: Utc::now().timestamp(), // Added iat
-            nbf: Utc::now().timestamp(), // Added nbf
-            jti: Uuid::new_v4().to_string(), // Added jti
-            role: "admin".to_string(),
-            token_type: TokenType::Access, // Added token_type
-            aud: "test_aud".to_string(), // Added aud
-            iss: "test_iss".to_string(), // Added iss
-        };
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(app_state_repo.clone()))
-                .app_data(web::Data::new(claims.clone())) // Simulate authenticated admin
+                .app_data(web::Data::new(user_repo_arc.clone() as Arc<dyn UserRepositoryTrait>))
+                .app_data(web::Data::new(fixture.config.clone()))
+                .app_data(web::Data::new(auth_service))
+                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
                 .service(
-                    web::resource("/api/admin/users/{id}/role")
-                        .route(web::put().to(update_user_role))
+                    web::scope("/api/admin")
+                        .wrap(admin_auth)
+                        .service(
+                            web::scope("/users")
+                                .route("/{id}/role", web::put().to(update_user_role))
+                        )
                 )
-                .wrap_fn(api_error_handler)
         ).await;
 
         let req_payload = UpdateRoleRequest { role: "admin".to_string() };
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/users/{}/role", admin_user_id)) // Attempting to edit self
+        let req = create_auth_request("PUT", &format!("/api/admin/users/{}/role", fixture.test_admin_id), &fixture.test_admin_token)
             .set_json(&req_payload)
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["success"], json!(false));
-        assert_eq!(body["error_type"], json!(ApiErrorType::Authorization.to_string()));
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["error_type"], json!("Authorization"));
         assert!(body["message"].as_str().unwrap().contains("You cannot edit your own account"));
     }
 
     #[actix_rt::test]
     async fn test_update_user_role_other_user_success() {
-        let admin_user_id = Uuid::new_v4();
-        let target_user_id = Uuid::new_v4();
-        let target_user = mock_user(target_user_id, "target_user", "user", true);
+        let fixture = UserCrudTestFixture::new().await;
+        let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
-        let mut mock_repo = MockUserRepositoryTrait::new();
+        // Create mock services
+        let mut user_repo = create_mock_user_repository();
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        // Set up user repository expectations
+        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
+        let test_admin_id = fixture.test_admin_id;
+        let test_target_user_id = fixture.test_target_user_id;
+        
         let updated_target_user = User { role: "admin".to_string(), ..target_user.clone() };
 
-        mock_repo.expect_update_role()
-            .withf(move |id, role| *id == target_user_id && role == "admin")
+        user_repo.expect_update_role()
+            .withf(move |id, role| *id == test_target_user_id && role == "admin")
             .times(1)
             .returning(move |_, _| Ok(Some(updated_target_user.clone())));
+        
+        // Mock find_by_id for authentication
+        user_repo.expect_find_by_id()
+            .returning(move |id| {
+                if id == test_admin_id {
+                    Ok(Some(test_admin.clone()))
+                } else {
+                    Ok(None)
+                }
+            });
 
-        let app_state_repo = Arc::new(mock_repo);
+        let user_repo_arc = Arc::new(user_repo);
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo_arc.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
 
-        let claims = Claims {
-            sub: admin_user_id, // Admin's ID
-            exp: (Utc::now() + chrono::Duration::days(1)).timestamp(), // Changed to i64
-            iat: Utc::now().timestamp(), // Added iat
-            nbf: Utc::now().timestamp(), // Added nbf
-            jti: Uuid::new_v4().to_string(), // Added jti
-            role: "admin".to_string(),
-            token_type: TokenType::Access, // Added token_type
-            aud: "test_aud".to_string(), // Added aud
-            iss: "test_iss".to_string(), // Added iss
-        };
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(app_state_repo.clone()))
-                .app_data(web::Data::new(claims.clone()))
+                .app_data(web::Data::new(user_repo_arc.clone() as Arc<dyn UserRepositoryTrait>))
+                .app_data(web::Data::new(fixture.config.clone()))
+                .app_data(web::Data::new(auth_service))
+                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
                 .service(
-                    web::resource("/api/admin/users/{id}/role")
-                        .route(web::put().to(update_user_role))
+                    web::scope("/api/admin")
+                        .wrap(admin_auth)
+                        .service(
+                            web::scope("/users")
+                                .route("/{id}/role", web::put().to(update_user_role))
+                        )
                 )
-                .wrap_fn(api_error_handler)
         ).await;
 
         let req_payload = UpdateRoleRequest { role: "admin".to_string() };
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/users/{}/role", target_user_id)) // Editing another user
+        let req = create_auth_request("PUT", &format!("/api/admin/users/{}/role", fixture.test_target_user_id), &fixture.test_admin_token)
             .set_json(&req_payload)
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        let body: serde_json::Value = test::read_body_json(resp).await;
+        let body: Value = test::read_body_json(resp).await;
         assert_eq!(body["success"], json!(true));
         assert_eq!(body["data"]["role"], json!("admin"));
     }
 
     #[actix_rt::test]
     async fn test_update_user_status_self_edit_forbidden() {
-        let admin_user_id = Uuid::new_v4();
-        let mut mock_repo = MockUserRepositoryTrait::new();
+        let fixture = UserCrudTestFixture::new().await;
+        
+        // Create mock services
+        let mut user_repo = create_mock_user_repository();
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        // Set up user repository expectations
+        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
+        let test_admin_id = fixture.test_admin_id;
 
-        mock_repo.expect_update_status().times(0);
+        user_repo.expect_update_status().times(0);
+        
+        // Mock find_by_id for authentication
+        user_repo.expect_find_by_id()
+            .returning(move |id| {
+                if id == test_admin_id {
+                    Ok(Some(test_admin.clone()))
+                } else {
+                    Ok(None)
+                }
+            });
 
-        let app_state_repo = Arc::new(mock_repo);
+        let user_repo_arc = Arc::new(user_repo);
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo_arc.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
 
-        let claims = Claims {
-            sub: admin_user_id, // Admin's own ID
-            exp: (Utc::now() + chrono::Duration::days(1)).timestamp(), // Changed to i64
-            iat: Utc::now().timestamp(), // Added iat
-            nbf: Utc::now().timestamp(), // Added nbf
-            jti: Uuid::new_v4().to_string(), // Added jti
-            role: "admin".to_string(),
-            token_type: TokenType::Access, // Added token_type
-            aud: "test_aud".to_string(), // Added aud
-            iss: "test_iss".to_string(), // Added iss
-        };
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(app_state_repo.clone()))
-                .app_data(web::Data::new(claims.clone()))
+                .app_data(web::Data::new(user_repo_arc.clone() as Arc<dyn UserRepositoryTrait>))
+                .app_data(web::Data::new(fixture.config.clone()))
+                .app_data(web::Data::new(auth_service))
+                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
                 .service(
-                    web::resource("/api/admin/users/{id}/status")
-                        .route(web::put().to(update_user_status))
+                    web::scope("/api/admin")
+                        .wrap(admin_auth)
+                        .service(
+                            web::scope("/users")
+                                .route("/{id}/status", web::put().to(update_user_status))
+                        )
                 )
-                .wrap_fn(api_error_handler)
         ).await;
 
         let req_payload = UpdateStatusRequest { is_active: false };
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/users/{}/status", admin_user_id)) // Attempting to edit self
+        let req = create_auth_request("PUT", &format!("/api/admin/users/{}/status", fixture.test_admin_id), &fixture.test_admin_token)
             .set_json(&req_payload)
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
         
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["success"], json!(false));
-        assert_eq!(body["error_type"], json!(ApiErrorType::Authorization.to_string()));
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["error_type"], json!("Authorization"));
         assert!(body["message"].as_str().unwrap().contains("You cannot edit your own account"));
     }
 
     #[actix_rt::test]
     async fn test_update_user_status_other_user_success() {
-        let admin_user_id = Uuid::new_v4();
-        let target_user_id = Uuid::new_v4();
-        let target_user = mock_user(target_user_id, "target_user", "user", true);
+        let fixture = UserCrudTestFixture::new().await;
+        let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
-        let mut mock_repo = MockUserRepositoryTrait::new();
+        // Create mock services
+        let mut user_repo = create_mock_user_repository();
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        // Set up user repository expectations
+        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
+        let test_admin_id = fixture.test_admin_id;
+        let test_target_user_id = fixture.test_target_user_id;
+        
         let updated_target_user = User { is_active: false, ..target_user.clone() };
 
-        mock_repo.expect_update_status()
-            .withf(move |id, is_active| *id == target_user_id && !*is_active)
+        user_repo.expect_update_status()
+            .withf(move |id, is_active| *id == test_target_user_id && !*is_active)
             .times(1)
             .returning(move |_, _| Ok(Some(updated_target_user.clone())));
+        
+        // Mock find_by_id for authentication
+        user_repo.expect_find_by_id()
+            .returning(move |id| {
+                if id == test_admin_id {
+                    Ok(Some(test_admin.clone()))
+                } else {
+                    Ok(None)
+                }
+            });
 
-        let app_state_repo = Arc::new(mock_repo);
+        let user_repo_arc = Arc::new(user_repo);
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo_arc.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
 
-        let claims = Claims {
-            sub: admin_user_id, // Admin's ID
-            exp: (Utc::now() + chrono::Duration::days(1)).timestamp(), // Changed to i64
-            iat: Utc::now().timestamp(), // Added iat
-            nbf: Utc::now().timestamp(), // Added nbf
-            jti: Uuid::new_v4().to_string(), // Added jti
-            role: "admin".to_string(),
-            token_type: TokenType::Access, // Added token_type
-            aud: "test_aud".to_string(), // Added aud
-            iss: "test_iss".to_string(), // Added iss
-        };
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(app_state_repo.clone()))
-                .app_data(web::Data::new(claims.clone()))
+                .app_data(web::Data::new(user_repo_arc.clone() as Arc<dyn UserRepositoryTrait>))
+                .app_data(web::Data::new(fixture.config.clone()))
+                .app_data(web::Data::new(auth_service))
+                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
                 .service(
-                    web::resource("/api/admin/users/{id}/status")
-                        .route(web::put().to(update_user_status))
+                    web::scope("/api/admin")
+                        .wrap(admin_auth)
+                        .service(
+                            web::scope("/users")
+                                .route("/{id}/status", web::put().to(update_user_status))
+                        )
                 )
-                .wrap_fn(api_error_handler)
         ).await;
 
         let req_payload = UpdateStatusRequest { is_active: false };
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/users/{}/status", target_user_id)) // Editing another user
+        let req = create_auth_request("PUT", &format!("/api/admin/users/{}/status", fixture.test_target_user_id), &fixture.test_admin_token)
             .set_json(&req_payload)
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        let body: serde_json::Value = test::read_body_json(resp).await;
+        let body: Value = test::read_body_json(resp).await;
         assert_eq!(body["success"], json!(true));
         // The UserAdminView for the response doesn't directly include `is_active`.
         // We trust the handler uses the updated user from repo for its response.
@@ -238,47 +384,70 @@ mod tests {
     // This is not strictly required by the subtask but confirms the pattern.
     #[actix_rt::test]
     async fn test_update_user_username_self_edit_forbidden() {
-        let admin_user_id = Uuid::new_v4();
-        let mut mock_repo = MockUserRepositoryTrait::new();
+        let fixture = UserCrudTestFixture::new().await;
+        
+        // Create mock services
+        let mut user_repo = create_mock_user_repository();
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        // Set up user repository expectations
+        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
+        let test_admin_id = fixture.test_admin_id;
 
-        mock_repo.expect_find_by_id().times(0); // Should fail before this
-        mock_repo.expect_update_username().times(0);
+        user_repo.expect_find_by_id().times(0); // Should fail before this
+        user_repo.expect_update_username().times(0);
+        
+        // Mock find_by_id for authentication
+        user_repo.expect_find_by_id()
+            .returning(move |id| {
+                if id == test_admin_id {
+                    Ok(Some(test_admin.clone()))
+                } else {
+                    Ok(None)
+                }
+            });
 
-        let app_state_repo = Arc::new(mock_repo);
+        let user_repo_arc = Arc::new(user_repo);
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo_arc.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
 
-        let claims = Claims {
-            sub: admin_user_id, // Admin's own ID
-            exp: (Utc::now() + chrono::Duration::days(1)).timestamp(), // Changed to i64
-            iat: Utc::now().timestamp(), // Added iat
-            nbf: Utc::now().timestamp(), // Added nbf
-            jti: Uuid::new_v4().to_string(), // Added jti
-            role: "admin".to_string(),
-            token_type: TokenType::Access, // Added token_type
-            aud: "test_aud".to_string(), // Added aud
-            iss: "test_iss".to_string(), // Added iss
-        };
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(app_state_repo.clone()))
-                .app_data(web::Data::new(claims.clone())) 
+                .app_data(web::Data::new(user_repo_arc.clone() as Arc<dyn UserRepositoryTrait>))
+                .app_data(web::Data::new(fixture.config.clone()))
+                .app_data(web::Data::new(auth_service))
+                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
                 .service(
-                    web::resource("/api/admin/users/{id}/username")
-                        .route(web::put().to(update_user_username))
+                    web::scope("/api/admin")
+                        .wrap(admin_auth)
+                        .service(
+                            web::scope("/users")
+                                .route("/{id}/username", web::put().to(update_user_username))
+                        )
                 )
-                .wrap_fn(api_error_handler)
         ).await;
 
         let req_payload = UpdateUsernameRequest { username: "new_admin_name".to_string() };
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/users/{}/username", admin_user_id)) // Attempting to edit self
+        let req = create_auth_request("PUT", &format!("/api/admin/users/{}/username", fixture.test_admin_id), &fixture.test_admin_token)
             .set_json(&req_payload)
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["success"], json!(false));
-        assert_eq!(body["error_type"], json!(ApiErrorType::Authorization.to_string()));
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["error_type"], json!("Authorization"));
+        assert!(body["message"].as_str().unwrap().contains("You cannot edit your own account"));
     }
 }

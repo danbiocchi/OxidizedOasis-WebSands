@@ -1,14 +1,21 @@
 use actix_web::{test, App};
 use oxidizedoasis_websands::api::routes::route_config::configure_all;
 use oxidizedoasis_websands::infrastructure::database::connection::create_pool;
+use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use serde_json::Value;
+
+#[path = "common/mod.rs"]
+mod common;
 
 #[actix_rt::test]
 async fn test_health_check_endpoint() {
-    // Load .env file for database URL and other configurations
-    dotenv::dotenv().ok();
+    // Load .env.test file for test database URL and other configurations
+    dotenv::from_filename(".env.test").ok();
 
-    let db_pool = create_pool().await.expect("Failed to create database pool for test");
+    let (config, db_name) = common::create_test_config_with_cleanup().await
+        .expect("Failed to create test config with cleanup");
+    
+    let db_pool = create_pool(&config).await.expect("Failed to create database pool for test");
 
     let mut app = test::init_service(
         App::new()
@@ -17,7 +24,7 @@ async fn test_health_check_endpoint() {
     ).await;
 
     let req = test::TestRequest::get().uri("/api/health").to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
 
     assert!(resp.status().is_success(), "Response status should be 2xx");
 
@@ -36,14 +43,21 @@ async fn test_health_check_endpoint() {
     // Check database status specifically
     // This implicitly tests database connectivity if the main health_check logic includes a ping
     assert_eq!(body["database_status"], "OK", "Database status should be OK");
+    
+    // Cleanup test database
+    common::cleanup_test_database(&db_name).await
+        .expect("Failed to cleanup test database");
 }
 
 #[actix_rt::test]
 async fn test_database_connectivity_via_health_check() {
-    // Load .env file
-    dotenv::dotenv().ok();
+    // Load .env.test file for test environment
+    dotenv::from_filename(".env.test").ok();
 
-    let db_pool = create_pool().await.expect("Failed to create database pool for test");
+    let (config, db_name) = common::create_test_config_with_cleanup().await
+        .expect("Failed to create test config with cleanup");
+    
+    let db_pool = create_pool(&config).await.expect("Failed to create database pool for test");
 
     // Test a simple query
     // let result = sqlx::query("SELECT 1 as id")
@@ -63,12 +77,16 @@ async fn test_database_connectivity_via_health_check() {
     ).await;
 
     let req = test::TestRequest::get().uri("/api/health").to_request();
-    let resp = test::call_service(&mut app, req).await;
+    let resp = test::call_service(&app, req).await;
 
     assert!(resp.status().is_success(), "Health check response status should be 2xx");
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["database_status"], "OK", "Health check should report database_status as OK");
+    
+    // Cleanup test database
+    common::cleanup_test_database(&db_name).await
+        .expect("Failed to cleanup test database");
 }
 
 #[actix_rt::test]
@@ -124,7 +142,7 @@ async fn test_health_check_database_error() {
     println!("Running test_health_check_database_error: This test expects the database to be INACCESSIBLE.");
     println!("If a database is running and accessible at the configured DATABASE_URL, this test will FAIL.");
 
-    dotenv::dotenv().ok();
+    dotenv::from_filename(".env.test").ok();
     // We don't create a special pool here; we rely on the app's default pool creation.
     // This test becomes an environmental test: is the DB (that the app would use) down?
     // For this test to be meaningful, the DATABASE_URL should point to a non-operational DB.
@@ -152,7 +170,7 @@ async fn test_health_check_database_error() {
     ).await;
 
     let req = actix_web::test::TestRequest::get().uri("/api/health").to_request();
-    let resp = actix_web::test::call_service(&mut app, req).await;
+    let resp = actix_web::test::call_service(&app, req).await;
 
     assert!(resp.status().is_success(), "Response status should be 2xx even on DB error");
     let body: serde_json::Value = actix_web::test::read_body_json(resp).await;

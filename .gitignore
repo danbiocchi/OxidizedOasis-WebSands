@@ -1,8 +1,6 @@
 /target
 
 # Ignore environment variables file
-.env
-.env.test
 
 # Ignore logs
 *.log

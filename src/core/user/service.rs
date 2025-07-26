@@ -834,6 +834,7 @@ mod tests {
             password: None, // No password change
         };
 
+        let current_user = create_test_user(user_id, original_username, "update@example.com", true);
         let expected_updated_user = User {
             id: user_id,
             username: updated_username.to_string(),
@@ -843,6 +844,12 @@ mod tests {
             ..create_test_user(user_id, original_username, "original@example.com", true) // base
         };
         let cloned_updated_user = expected_updated_user.clone();
+
+        // Add the missing find_by_id expectation for current user lookup
+        mock_repo.expect_find_by_id()
+            .with(predicate::eq(user_id))
+            .times(1)
+            .returning(move |_| Ok(Some(current_user.clone())));
 
         mock_repo.expect_update()
             .withf(move |id_arg, input_arg, pass_hash_arg| {
@@ -886,6 +893,7 @@ mod tests {
             password: Some(new_password.to_string()),
         };
 
+        let current_user = create_test_user(user_id, original_username, "updatepass@example.com", true);
         let mut expected_updated_user = User {
             id: user_id,
             username: updated_username.to_string(),
@@ -896,9 +904,14 @@ mod tests {
         };
         // Simulate a new hash for the returned user from repo
         let new_mocked_hash = bcrypt::hash(new_password, DEFAULT_COST).unwrap();
-        expected_updated_user.password_hash = new_mocked_hash.clone(); 
+        expected_updated_user.password_hash = new_mocked_hash.clone();
         let cloned_updated_user = expected_updated_user.clone();
 
+        // Add the missing find_by_id expectation for current user lookup
+        mock_repo.expect_find_by_id()
+            .with(predicate::eq(user_id))
+            .times(1)
+            .returning(move |_| Ok(Some(current_user.clone())));
 
         mock_repo.expect_update()
             .withf(move |id_arg, input_arg, pass_hash_arg| {
@@ -943,10 +956,14 @@ mod tests {
             password: None,
         };
 
-        mock_repo.expect_update()
-            .with(predicate::eq(user_id), predicate::always(), predicate::always())
+        // Add the missing find_by_id expectation - this is where the user not found error should come from
+        mock_repo.expect_find_by_id()
+            .with(predicate::eq(user_id))
             .times(1)
-            .returning(|_, _, _| Err(sqlx::Error::RowNotFound)); // Simulate user not found by repo
+            .returning(|_| Ok(None)); // User not found
+
+        // The update method should never be called since find_by_id returns None
+        mock_repo.expect_update().never();
 
         let user_service = UserService::new(
             Arc::new(mock_repo),
@@ -957,8 +974,8 @@ mod tests {
         let result = user_service.update_user(user_id, update_input).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        // DbError from RowNotFound should correctly map to ApiErrorType::NotFound.
-        assert_eq!(err.error_type, ApiErrorType::NotFound); 
+        assert_eq!(err.error_type, ApiErrorType::NotFound);
+        assert_eq!(err.message, "User not found");
     }
     
     #[tokio::test]
@@ -977,10 +994,17 @@ mod tests {
             password: Some(new_password.to_string()),
         };
 
+        let current_user = create_test_user(user_id, "original_user", "revokefail@example.com", true);
         let mut expected_updated_user = create_test_user(user_id, updated_username, "revokefail@example.com", true);
         let new_mocked_hash = bcrypt::hash(new_password, DEFAULT_COST).unwrap();
         expected_updated_user.password_hash = new_mocked_hash.clone();
         let cloned_updated_user = expected_updated_user.clone();
+
+        // Add the missing find_by_id expectation for current user lookup
+        mock_repo.expect_find_by_id()
+            .with(predicate::eq(user_id))
+            .times(1)
+            .returning(move |_| Ok(Some(current_user.clone())));
 
         mock_repo.expect_update()
             .times(1)
@@ -1002,7 +1026,7 @@ mod tests {
 
         let result = user_service.update_user(user_id, update_input).await;
         // User update should still succeed, error during token revocation is logged but doesn't fail the operation
-        assert!(result.is_ok()); 
+        assert!(result.is_ok());
         let user = result.unwrap();
         assert_eq!(user.username, updated_username);
         assert_eq!(user.password_hash, new_mocked_hash);
@@ -1032,7 +1056,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.error_type, ApiErrorType::Validation);
-        assert_eq!(err.message, "Invalid input");
+        // The error message now contains detailed validation errors instead of just "Invalid input"
+        assert!(err.message.contains("Validation error"));
     }
 
     // --- Tests for delete_user ---

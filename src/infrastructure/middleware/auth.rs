@@ -110,17 +110,20 @@ async fn jwt_auth_validator_internal(
     let token_revocation_service = token_revocation_service_data.unwrap().into_inner(); 
     
     let token = if let Some(cookie) = req.cookie("access_token") {
+        debug!("🔍 DEBUG: Found access_token cookie, length: {}", cookie.value().len());
         cookie.value().to_string()
     } else if let Some(auth) = credentials {
+        debug!("🔍 DEBUG: Found bearer token, length: {}", auth.token().len());
         auth.token().to_string()
     } else {
+        debug!("🔍 DEBUG: No authentication token found (no cookie or bearer)");
         return Err((AuthError::new(
             "No authentication token found".to_string(),
             401
         ).into(), req));
     };
 
-    debug!("Validating JWT token");
+    debug!("🔍 DEBUG: Validating JWT token for request: {}", req.path());
     let validation_result = validate_jwt(
         &token_revocation_service,
         &token[..],
@@ -132,17 +135,18 @@ async fn jwt_auth_validator_internal(
     
     match validation_result {
         Ok(claims) => {
-            info!("Token validated successfully for user: {}", claims.sub);
+            info!("🔍 DEBUG: Token validated successfully for user: {} on path: {}", claims.sub, req.path());
             let now = chrono::Utc::now().timestamp();
             let remaining_time = claims.exp - now;
-            if remaining_time < 300 { 
-                warn!("Token for user {} is about to expire in {} seconds", claims.sub, remaining_time);
+            debug!("🔍 DEBUG: Token expires in {} seconds", remaining_time);
+            if remaining_time < 300 {
+                warn!("🔍 DEBUG: Token for user {} is about to expire in {} seconds", claims.sub, remaining_time);
             }
             req.extensions_mut().insert(claims);
             Ok(req)
         },
         Err(e) => {
-            error!("Token validation failed: {:?}", e);
+            error!("🔍 DEBUG: Token validation failed for path {}: {:?}", req.path(), e);
             Err((AuthError::new(
                 "Invalid or expired token".to_string(),
                 401

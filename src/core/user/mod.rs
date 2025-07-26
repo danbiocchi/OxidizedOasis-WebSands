@@ -7,3 +7,7 @@ pub use repository::{UserRepository, UserRepositoryTrait};
 #[cfg(any(test, feature = "test-utils"))]
 pub use repository::MockUserRepositoryTrait;
 pub use service::UserService;
+
+// Define UserError as an alias for ApiError to maintain compatibility
+use crate::common::error::ApiError;
+pub type UserError = ApiError;

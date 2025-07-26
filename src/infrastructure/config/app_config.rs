@@ -27,7 +27,17 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     #[cfg(test)]
     pub async fn get_pool(&self) -> Result<sqlx::PgPool, sqlx::Error> {
-        sqlx::PgPool::connect(&self.url).await
+        use sqlx::postgres::PgPoolOptions;
+        use std::time::Duration;
+        
+        PgPoolOptions::new()
+            .max_connections(2) // Lower connection count for tests
+            .min_connections(1)
+            .max_lifetime(Some(Duration::from_secs(30)))
+            .idle_timeout(Some(Duration::from_secs(10)))
+            .acquire_timeout(Duration::from_secs(5)) // Shorter timeout for tests
+            .connect(&self.url)
+            .await
     }
 }
 
@@ -69,7 +79,11 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|poisoned| {
+            // Clear the poison and continue - this allows tests to recover from panics
+            let guard = poisoned.into_inner();
+            guard
+        });
         let original_value = env::var(key).ok();
         
         if let Some(v) = value {
@@ -78,14 +92,19 @@ mod tests {
             env::remove_var(key);
         }
 
-        let result = func();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(func));
 
+        // Always restore environment variables, even if test panicked
         if let Some(orig_val) = original_value {
             env::set_var(key, orig_val);
         } else {
             env::remove_var(key);
         }
-        result
+        
+        match result {
+            Ok(val) => val,
+            Err(panic_payload) => std::panic::resume_unwind(panic_payload),
+        }
     }
     
     // Helper to run a test with multiple env vars set
@@ -93,7 +112,11 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|poisoned| {
+            // Clear the poison and continue - this allows tests to recover from panics
+            let guard = poisoned.into_inner();
+            guard
+        });
         let mut original_values = Vec::new();
 
         for (key, _) in &vars {
@@ -108,8 +131,9 @@ mod tests {
             }
         }
 
-        let result = func();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(func));
 
+        // Always restore environment variables, even if test panicked
         for (key, original_value) in original_values {
             if let Some(orig_val) = original_value {
                 env::set_var(key, orig_val);
@@ -117,7 +141,11 @@ mod tests {
                 env::remove_var(&key);
             }
         }
-        result
+        
+        match result {
+            Ok(val) => val,
+            Err(panic_payload) => std::panic::resume_unwind(panic_payload),
+        }
     }
 
     #[test]
@@ -150,6 +178,7 @@ mod tests {
             ("SERVER_PORT", None), // Will use default
             ("DATABASE_URL", Some("postgres://default:default@localhost/defaultdb")),
             ("DB_MAX_CONNECTIONS", None), // Will use default
+            ("JWT_SECRET", Some("test_default_secret")), // Required environment variable
         ];
         with_env_vars(vars, || {
             let config_result = AppConfig::from_env();

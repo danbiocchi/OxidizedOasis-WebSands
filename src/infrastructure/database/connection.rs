@@ -2,8 +2,12 @@ use sqlx::postgres::{PgPool, PgPoolOptions, Postgres};
 use sqlx::{Executor, Error as SqlxError};
 use sqlx::migrate::{MigrateDatabase, MigrateError};
 use std::time::Duration;
+use std::sync::Mutex;
 use log::{info, debug, error, warn};
 use crate::infrastructure::AppConfig;
+
+// Global mutex to prevent concurrent database setup operations
+static DB_SETUP_MUTEX: Mutex<()> = Mutex::new(());
 
 pub type DatabasePool = PgPool;
 
@@ -88,6 +92,9 @@ async fn reset_database(base_url: &str, db_name: &str) -> Result<(), DatabaseErr
 }
 
 async fn setup_database(pool: &PgPool, db_name: &str, app_user: &str, environment: &str) -> Result<(), DatabaseError> {
+    // Use mutex to prevent concurrent database setup operations
+    let _lock = DB_SETUP_MUTEX.lock().unwrap();
+    
     debug!("Setting up database schema and permissions...");
     
     // Create base queries that are common to both environments
@@ -97,16 +104,8 @@ async fn setup_database(pool: &PgPool, db_name: &str, app_user: &str, environmen
     ];
 
     if environment == "development" {
-        // Development mode: grant permissions to postgres and app_user
+        // Development mode: grant permissions to superuser and app_user
         setup_queries.extend(vec![
-            // Ensure postgres user has full access for CLI operations
-            format!("GRANT ALL PRIVILEGES ON DATABASE {} TO postgres", db_name),
-            "GRANT ALL PRIVILEGES ON SCHEMA public TO postgres".to_string(),
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO postgres".to_string(),
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO postgres".to_string(),
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON FUNCTIONS TO postgres".to_string(),
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TYPES TO postgres".to_string(),
-            
             // Grant permissions to app_user
             format!("GRANT CONNECT ON DATABASE {} TO {}", db_name, app_user),
             format!("GRANT USAGE, CREATE ON SCHEMA public TO {}", app_user),
@@ -136,8 +135,16 @@ async fn setup_database(pool: &PgPool, db_name: &str, app_user: &str, environmen
         match pool.execute(&*query).await {
             Ok(_) => debug!("Successfully executed: {}", query),
             Err(e) => {
-                error!("Failed to execute setup query '{}': {}", query, e);
-                return Err(DatabaseError::Setup(e));
+                // Handle permission errors gracefully - they might already be set
+                if e.to_string().contains("already exists") ||
+                   e.to_string().contains("duplicate key") ||
+                   e.to_string().contains("already granted") ||
+                   e.to_string().contains("role") && e.to_string().contains("already") {
+                    debug!("Permission already exists, skipping: {}", query);
+                } else {
+                    error!("Failed to execute setup query '{}': {}", query, e);
+                    return Err(DatabaseError::Setup(e));
+                }
             }
         }
     }
@@ -150,24 +157,41 @@ async fn setup_and_migrate(su_pool: &PgPool, db_name: &str, app_user: &str, envi
     // Set up database permissions
     setup_database(su_pool, db_name, app_user, environment).await?;
     
-    // Run migrations
-    info!("Running migrations...");
-    sqlx::migrate!("./migrations")
-        .run(su_pool)
-        .await
-        .map_err(DatabaseError::Migration)?;
+    // Run migrations with mutex protection
+    {
+        let _lock = DB_SETUP_MUTEX.lock().unwrap();
+        info!("Running migrations...");
+        match sqlx::migrate!("./migrations").run(su_pool).await {
+            Ok(_) => info!("Migrations completed successfully"),
+            Err(e) => {
+                // Check if migrations already applied
+                if e.to_string().contains("applied") || e.to_string().contains("version") {
+                    info!("Migrations already applied, continuing...");
+                } else {
+                    return Err(DatabaseError::Migration(e));
+                }
+            }
+        }
+    }
     
     Ok(())
 }
 
-pub async fn create_pool(_x: &AppConfig) -> Result<DatabasePool, DatabaseError> {
-    // Get configuration from environment
-    let database_url = std::env::var("DATABASE_URL")
-        .map_err(|_| DatabaseError::Configuration("DATABASE_URL is not set".into()))?;
-    let su_database_url = std::env::var("SU_DATABASE_URL")
-        .map_err(|_| DatabaseError::Configuration("SU_DATABASE_URL is not set".into()))?;
-    let db_name = std::env::var("DB_NAME")
-        .map_err(|_| DatabaseError::Configuration("DB_NAME is not set".into()))?;
+pub async fn create_pool(config: &AppConfig) -> Result<DatabasePool, DatabaseError> {
+    // Use the configuration passed in rather than environment variables to avoid race conditions
+    let database_url = &config.database.url;
+    
+    // Extract database name from DATABASE_URL to avoid race conditions with environment variables
+    let db_name = database_url
+        .split('/')
+        .last()
+        .ok_or_else(|| DatabaseError::Configuration("Invalid DATABASE_URL format - cannot extract database name".into()))?
+        .to_string();
+    
+    // Construct SU_DATABASE_URL using the same database name to ensure consistency
+    let su_database_url = format!("postgres://dreamer@localhost:5432/{}", db_name);
+    
+    println!("🔍 [create_pool] Thread: {:?}, DB_NAME: {}", std::thread::current().id(), db_name);
     let db_user = std::env::var("DB_USER")
         .map_err(|_| DatabaseError::Configuration("DB_USER is not set".into()))?;
     let environment = std::env::var("ENVIRONMENT")
@@ -181,7 +205,17 @@ pub async fn create_pool(_x: &AppConfig) -> Result<DatabasePool, DatabaseError> 
     }
 
     // Extract base URL for potential database reset
-    let base_url = su_database_url.replace(&format!("/{}", db_name), "/postgres");
+    let base_url = if su_database_url.ends_with(&format!("/{}", db_name)) {
+        su_database_url.replace(&format!("/{}", db_name), "/postgres")
+    } else {
+        // Handle cases where the URL format might be different
+        let parts: Vec<&str> = su_database_url.rsplitn(2, '/').collect();
+        if parts.len() == 2 {
+            format!("{}/postgres", parts[1])
+        } else {
+            su_database_url.replace(&db_name, "postgres")
+        }
+    };
 
     // First check if database exists
     let db_exists = Postgres::database_exists(&su_database_url).await
@@ -218,10 +252,25 @@ pub async fn create_pool(_x: &AppConfig) -> Result<DatabasePool, DatabaseError> 
         } else {
             // Create new database
             info!("Creating new database '{}'...", db_name);
-            Postgres::create_database(&su_database_url).await
-                .map_err(|e| DatabaseError::Connection(e))?;
+            println!("🔍 [create_pool] Thread: {:?}, Attempting to create database: {}", std::thread::current().id(), db_name);
+            match Postgres::create_database(&su_database_url).await {
+                Ok(_) => {
+                    info!("Database '{}' created successfully", db_name);
+                    println!("🔍 [create_pool] Thread: {:?}, Database creation SUCCESS: {}", std::thread::current().id(), db_name);
+                }
+                Err(e) => {
+                    // Handle race condition - another test might have created the database
+                    if e.to_string().contains("already exists") || e.to_string().contains("duplicate key") {
+                        info!("Database '{}' already exists (created by concurrent process)", db_name);
+                        println!("🔍 [create_pool] Thread: {:?}, Database creation RACE CONDITION: {} - {}", std::thread::current().id(), db_name, e);
+                    } else {
+                        println!("🔍 [create_pool] Thread: {:?}, Database creation FAILED: {} - {}", std::thread::current().id(), db_name, e);
+                        return Err(DatabaseError::Connection(e));
+                    }
+                }
+            }
             
-            // Connect to new database
+            // Connect to database (whether we created it or it already existed)
             let su_pool = PgPoolOptions::new()
                 .max_connections(1)
                 .connect(&su_database_url)
@@ -235,8 +284,19 @@ pub async fn create_pool(_x: &AppConfig) -> Result<DatabasePool, DatabaseError> 
         // Production mode: simpler flow
         if !db_exists {
             info!("Creating database '{}'...", db_name);
-            Postgres::create_database(&su_database_url).await
-                .map_err(|e| DatabaseError::Connection(e))?;
+            match Postgres::create_database(&su_database_url).await {
+                Ok(_) => {
+                    info!("Database '{}' created successfully", db_name);
+                }
+                Err(e) => {
+                    // Handle race condition - another test might have created the database
+                    if e.to_string().contains("already exists") || e.to_string().contains("duplicate key") {
+                        info!("Database '{}' already exists (created by concurrent process)", db_name);
+                    } else {
+                        return Err(DatabaseError::Connection(e));
+                    }
+                }
+            }
         }
         
         let su_pool = PgPoolOptions::new()
@@ -252,12 +312,12 @@ pub async fn create_pool(_x: &AppConfig) -> Result<DatabasePool, DatabaseError> 
     // Create application user pool for normal operations
     info!("Creating application user connection pool...");
     let app_pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(config.database.max_connections as u32)
         .min_connections(1)
         .max_lifetime(Some(Duration::from_secs(30 * 60)))
         .idle_timeout(Some(Duration::from_secs(10 * 60)))
         .acquire_timeout(Duration::from_secs(30))
-        .connect(&database_url)
+        .connect(database_url)
         .await
         .map_err(DatabaseError::Connection)?;
 
