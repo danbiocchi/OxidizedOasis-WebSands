@@ -91,39 +91,59 @@ async fn jwt_auth_validator_internal(
 
     let app_config = req.app_data::<web::Data<AppConfig>>().cloned();
     if app_config.is_none() {
-        error!("AppConfig not found in app_data for jwt_auth_validator_internal");
+        println!("🔍 DEBUG: AppConfig not found in app_data for jwt_auth_validator_internal");
+        println!("🔍 DEBUG: Available app_data types in request:");
+        // Try to debug what app data is actually available
         return Err((AuthError::new(
             "Internal server configuration error (AppConfig missing)".to_string(),
             500
         ).into(), req));
     }
+    println!("🔍 DEBUG: AppConfig found successfully in jwt_auth_validator_internal");
     let expected_audience = Some(app_config.unwrap().get_ref().jwt.audience.clone());
 
     let token_revocation_service_data = req.app_data::<web::Data<Arc<dyn TokenRevocationServiceTrait>>>().cloned();
     if token_revocation_service_data.is_none() {
-        error!("TokenRevocationService not found in app_data for jwt_auth_validator_internal");
+        println!("🔍 DEBUG: TokenRevocationService not found in app_data for jwt_auth_validator_internal");
         return Err((AuthError::new(
-            "Internal server configuration error".to_string(),
+            "Internal server configuration error (TokenRevocationService missing)".to_string(),
             500
         ).into(), req));
     }
+    println!("🔍 DEBUG: TokenRevocationService found successfully in jwt_auth_validator_internal");
     let token_revocation_service = token_revocation_service_data.unwrap().into_inner(); 
     
     let token = if let Some(cookie) = req.cookie("access_token") {
-        debug!("🔍 DEBUG: Found access_token cookie, length: {}", cookie.value().len());
+        println!("🔍 DEBUG: Found access_token cookie, length: {}", cookie.value().len());
         cookie.value().to_string()
     } else if let Some(auth) = credentials {
-        debug!("🔍 DEBUG: Found bearer token, length: {}", auth.token().len());
+        println!("🔍 DEBUG: Found bearer token, length: {}", auth.token().len());
+        println!("🔍 DEBUG: Bearer token preview: {}...", &auth.token()[..std::cmp::min(auth.token().len(), 20)]);
         auth.token().to_string()
     } else {
-        debug!("🔍 DEBUG: No authentication token found (no cookie or bearer)");
+        println!("🔍 DEBUG: No authentication token found (no cookie or bearer)");
         return Err((AuthError::new(
             "No authentication token found".to_string(),
             401
         ).into(), req));
     };
 
-    debug!("🔍 DEBUG: Validating JWT token for request: {}", req.path());
+    println!("🔍 DEBUG: Validating JWT token for request: {}", req.path());
+    println!("🔍 DEBUG: Expected audience: {:?}", expected_audience);
+    
+    // Decode token without validation to see what's actually in it
+    let decode_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
+    let mut validation = jsonwebtoken::Validation::default();
+    validation.validate_exp = false;
+    validation.validate_nbf = false;
+    validation.validate_aud = false;
+    
+    if let Ok(token_data) = jsonwebtoken::decode::<crate::core::auth::jwt::Claims>(&token, &decode_key, &validation) {
+        println!("🔍 DEBUG: Token contents - aud: '{}', iss: '{}', sub: {}",
+                 token_data.claims.aud, token_data.claims.iss, token_data.claims.sub);
+    } else {
+        println!("🔍 DEBUG: Failed to decode token for inspection");
+    }
     let validation_result = validate_jwt(
         &token_revocation_service,
         &token[..],

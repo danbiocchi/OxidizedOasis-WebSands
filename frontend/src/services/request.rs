@@ -92,10 +92,10 @@ impl RequestBuilderExt for Request {
         Box::pin(async move {
             gloo::console::log!("🔍 DEBUG: RequestInterceptor Request Attempt");
             gloo::console::log!("🔍 DEBUG: Request URL:", &self.url().to_string());
-            gloo::console::log!("🔍 DEBUG: Request Method:", &self.method().as_str());
+            gloo::console::log!("🔍 DEBUG: Request Method:", &self.method().as_str().to_string());
             
             // Check if we have auth tokens before sending
-            let has_access_token = crate::services::auth::get_access_token().is_some();
+            let has_access_token = crate::services::auth::get_auth_token().is_some();
             let has_csrf_token = crate::services::auth::get_csrf_token().is_some();
             gloo::console::log!("🔍 DEBUG: Has access token:", has_access_token);
             gloo::console::log!("🔍 DEBUG: Has CSRF token:", has_csrf_token);
@@ -175,7 +175,7 @@ impl RequestBuilderExt for RequestBuilder {
             gloo::console::log!("🔍 DEBUG: RequestBuilder Request Attempt");
             
             // Check if we have auth tokens before sending
-            let has_access_token = crate::services::auth::get_access_token().is_some();
+            let has_access_token = crate::services::auth::get_auth_token().is_some();
             let has_csrf_token = crate::services::auth::get_csrf_token().is_some();
             gloo::console::log!("🔍 DEBUG: Has access token:", has_access_token);
             gloo::console::log!("🔍 DEBUG: Has CSRF token:", has_csrf_token);

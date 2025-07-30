@@ -17,8 +17,9 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 
 mod common;
 use common::{
-    create_test_app_config, create_test_user, generate_test_token,
-    test_data::*, http::*, mocks::*
+    test_data::*, http::*, mocks::*, create_test_user,
+    EnhancedTestConfig, assert_user_response, assert_error_response, assert_user_in_database,
+    seed_admin_test_data, UserManagementScenario, generate_test_token
 };
 
 /// Test structure for updating user role
@@ -39,164 +40,19 @@ struct UpdateStatusRequest {
     is_active: bool,
 }
 
-/// Test fixture for admin user management tests
-struct AdminTestFixture {
-    config: AppConfig,
-    test_user_id: Uuid,
-    test_admin_id: Uuid,
-    test_target_user_id: Uuid,
-    test_user_token: String,
-    test_admin_token: String,
-}
-
-impl AdminTestFixture {
-    async fn new() -> Self {
-        let config = create_test_app_config();
-        let test_user_id = Uuid::new_v4();
-        let test_admin_id = Uuid::new_v4();
-        let test_target_user_id = Uuid::new_v4();
-        
-        let test_user_token = generate_test_token(test_user_id, "user", 3600)
-            .expect("Failed to generate user token");
-        let test_admin_token = generate_test_token(test_admin_id, "admin", 3600)
-            .expect("Failed to generate admin token");
-
-        Self {
-            config,
-            test_user_id,
-            test_admin_id,
-            test_target_user_id,
-            test_user_token,
-            test_admin_token,
-        }
-    }
-
-}
-
 #[cfg(test)]
 mod admin_user_list_tests {
     use super::*;
 
     #[actix_rt::test]
     async fn test_list_users_success_as_admin() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -204,8 +60,9 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -230,124 +87,13 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", &fixture.test_user_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -355,8 +101,9 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -375,125 +122,14 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_unauthorized_without_token() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/admin/users")
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -501,8 +137,9 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -521,124 +158,13 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_invalid_token() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", "invalid.jwt.token")
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -646,8 +172,9 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -671,7 +198,7 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         // Create database helper and insert real users instead of using mocks
         let db_helper = common::database::DatabaseTestHelper::from_config(&fixture.config).await
@@ -743,8 +270,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -774,7 +301,7 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_not_found() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         println!("[DEBUG] test_get_user_not_found: Starting test");
@@ -782,119 +309,8 @@ mod admin_user_detail_tests {
         let req = create_auth_request("GET", &format!("/api/admin/users/{}", non_existent_id), &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -902,8 +318,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -943,124 +359,13 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_user_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1068,8 +373,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1088,125 +393,14 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_invalid_uuid() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         println!("[DEBUG] test_get_user_invalid_uuid: Starting test");
         let req = create_auth_request("GET", "/api/admin/users/invalid-uuid", &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1214,8 +408,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1249,7 +443,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "admin".to_string(),
@@ -1259,119 +453,8 @@ mod admin_user_role_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1379,8 +462,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1404,7 +487,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_invalid_role() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "invalid_role".to_string(),
@@ -1414,119 +497,8 @@ mod admin_user_role_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1534,8 +506,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1558,7 +530,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_self_edit_forbidden() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "user".to_string(),
@@ -1568,119 +540,8 @@ mod admin_user_role_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1688,8 +549,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1712,7 +573,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_not_found() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateRoleRequest {
@@ -1723,119 +584,8 @@ mod admin_user_role_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1843,8 +593,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1867,7 +617,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "admin".to_string(),
@@ -1877,119 +627,8 @@ mod admin_user_role_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1997,8 +636,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2017,7 +656,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_valid_roles() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         // Test both valid roles
         for role in &["user", "admin"] {
@@ -2029,128 +668,18 @@ mod admin_user_role_tests {
                 .set_json(&update_data)
                 .to_request();
 
-            // Create mock services
-            let mut user_repo = create_mock_user_repository();
-            let email_service = Arc::new(create_mock_email_service());
-            let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-            let active_token_service = Arc::new(create_mock_active_token_service());
-            
-            // Set up user repository expectations
-            let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-            let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-            let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-            
-            let test_user_id = fixture.test_user_id;
-            let test_admin_id = fixture.test_admin_id;
-            let test_target_user_id = fixture.test_target_user_id;
-            
-            // Clone objects for different closures to avoid ownership issues
-            let test_user_for_find_by_id = test_user.clone();
-            let test_admin_for_find_by_id = test_admin.clone();
-            let test_target_user_for_find_by_id = test_target_user.clone();
-            
-            let test_user_for_find_all = test_user.clone();
-            let test_admin_for_find_all = test_admin.clone();
-            let test_target_user_for_find_all = test_target_user.clone();
-            
-            let test_target_user_for_update_role = test_target_user.clone();
-            let test_target_user_for_update_username = test_target_user.clone();
-            let test_target_user_for_update_status = test_target_user.clone();
-            
-            // Mock find_by_id for authentication and operations
-            user_repo.expect_find_by_id()
-                .returning(move |id| {
-                    if id == test_user_id {
-                        Ok(Some(test_user_for_find_by_id.clone()))
-                    } else if id == test_admin_id {
-                        Ok(Some(test_admin_for_find_by_id.clone()))
-                    } else if id == test_target_user_id {
-                        Ok(Some(test_target_user_for_find_by_id.clone()))
-                    } else {
-                        Ok(None)
-                    }
-                });
-    
-            // Mock find_all for listing users
-            let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-            user_repo.expect_find_all()
-                .returning(move || Ok(all_users.clone()));
-    
-            // Mock update operations
-            user_repo.expect_update_role()
-                .returning(move |id, role| {
-                    if id == test_target_user_id {
-                        let mut updated_user = test_target_user_for_update_role.clone();
-                        updated_user.role = role.to_string();
-                        Ok(Some(updated_user))
-                    } else {
-                        Ok(None)
-                    }
-                });
-    
-            user_repo.expect_update_username()
-                .returning(move |id, username| {
-                    if id == test_target_user_id {
-                        let mut updated_user = test_target_user_for_update_username.clone();
-                        updated_user.username = username.to_string();
-                        Ok(Some(updated_user))
-                    } else {
-                        Ok(None)
-                    }
-                });
-    
-            user_repo.expect_update_status()
-                .returning(move |id, is_active| {
-                    if id == test_target_user_id {
-                        let mut updated_user = test_target_user_for_update_status.clone();
-                        updated_user.is_active = is_active;
-                        Ok(Some(updated_user))
-                    } else {
-                        Ok(None)
-                    }
-                });
-    
-            user_repo.expect_delete()
-                .returning(move |id| {
-                    if id == test_target_user_id {
-                        Ok(true)
-                    } else {
-                        Ok(false)
-                    }
-                });
-    
-            // Create shared mock repository
-            let shared_user_repo = Arc::new(user_repo);
-    
-            let auth_service = Arc::new(AuthService::new(
-                shared_user_repo.clone(),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
-                token_revocation_service.clone(),
-                active_token_service.clone(),
-                email_service.clone(),
-            ));
-    
-            let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-                oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                    .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-                email_service.clone(),
-                auth_service,
-                token_revocation_service.clone(),
-                active_token_service.clone(),
-            );
-    
-            // Use the same shared repository for admin routes
-            let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
-    
+            // Create standard mock services
+            let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+
             let admin_auth = HttpAuthentication::bearer(admin_validator);
-    
+
             let mut app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                    .app_data(web::Data::new(active_token_service))
+                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                    .app_data(web::Data::new(auth_service.clone()))
                     .app_data(web::Data::new(admin_user_repo))
                     .service(
                         web::scope("/api/admin/users")
@@ -2179,7 +708,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         // Create database helper and insert real users instead of using mocks
         let db_helper = common::database::DatabaseTestHelper::from_config(&fixture.config).await
@@ -2256,8 +785,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2285,7 +814,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_empty() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "".to_string(),
@@ -2295,119 +824,8 @@ mod admin_user_username_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -2415,8 +833,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2439,7 +857,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_whitespace_only() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "   ".to_string(),
@@ -2449,119 +867,8 @@ mod admin_user_username_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -2569,8 +876,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2592,7 +899,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_self_edit_forbidden() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "newadminname".to_string(),
@@ -2602,119 +909,8 @@ mod admin_user_username_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -2722,8 +918,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2746,7 +942,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_not_found() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateUsernameRequest {
@@ -2757,119 +953,8 @@ mod admin_user_username_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -2877,8 +962,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -2901,7 +986,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "hackerusername".to_string(),
@@ -2911,119 +996,8 @@ mod admin_user_username_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3031,8 +1005,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3056,7 +1030,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_activate_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: true,
@@ -3066,119 +1040,8 @@ mod admin_user_status_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3186,8 +1049,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3211,7 +1074,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_deactivate_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -3221,119 +1084,8 @@ mod admin_user_status_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3341,8 +1093,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3366,7 +1118,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_self_edit_forbidden() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -3376,119 +1128,8 @@ mod admin_user_status_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3496,8 +1137,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3520,7 +1161,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_not_found() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateStatusRequest {
@@ -3531,119 +1172,8 @@ mod admin_user_status_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3651,8 +1181,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3675,7 +1205,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -3685,119 +1215,8 @@ mod admin_user_status_tests {
             .set_json(&update_data)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3805,8 +1224,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3830,124 +1249,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_success() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -3955,8 +1263,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -3979,124 +1287,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_self_delete_forbidden() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_admin_id), &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -4104,8 +1301,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -4128,125 +1325,14 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_not_found() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", non_existent_id), &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -4254,8 +1340,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -4278,124 +1364,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_forbidden_as_user() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_user_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -4403,8 +1378,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -4423,125 +1398,14 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_unauthorized_without_token() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::delete()
             .uri(&format!("/api/admin/users/{}", fixture.test_target_user_id))
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -4549,8 +1413,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -4569,124 +1433,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_invalid_uuid() {
-        let fixture = AdminTestFixture::new().await;
+        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", "/api/admin/users/invalid-uuid", &fixture.test_admin_token)
             .to_request();
 
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
-        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
-        let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        let test_target_user = create_test_user(fixture.test_target_user_id, "targetuser", "target@example.com", true, "user");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        let test_target_user_id = fixture.test_target_user_id;
-        
-        // Clone objects for different closures to avoid ownership issues
-        let test_user_for_find_by_id = test_user.clone();
-        let test_admin_for_find_by_id = test_admin.clone();
-        let test_target_user_for_find_by_id = test_target_user.clone();
-        
-        let test_user_for_find_all = test_user.clone();
-        let test_admin_for_find_all = test_admin.clone();
-        let test_target_user_for_find_all = test_target_user.clone();
-        
-        let test_target_user_for_update_role = test_target_user.clone();
-        let test_target_user_for_update_username = test_target_user.clone();
-        let test_target_user_for_update_status = test_target_user.clone();
-        
-        // Mock find_by_id for authentication and operations
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user_for_find_by_id.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin_for_find_by_id.clone()))
-                } else if id == test_target_user_id {
-                    Ok(Some(test_target_user_for_find_by_id.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        // Mock find_all for listing users
-        let all_users = vec![test_user_for_find_all.clone(), test_admin_for_find_all.clone(), test_target_user_for_find_all.clone()];
-        user_repo.expect_find_all()
-            .returning(move || Ok(all_users.clone()));
-
-        // Mock update operations
-        user_repo.expect_update_role()
-            .returning(move |id, role| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_role.clone();
-                    updated_user.role = role.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_username()
-            .returning(move |id, username| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_username.clone();
-                    updated_user.username = username.to_string();
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_update_status()
-            .returning(move |id, is_active| {
-                if id == test_target_user_id {
-                    let mut updated_user = test_target_user_for_update_status.clone();
-                    updated_user.is_active = is_active;
-                    Ok(Some(updated_user))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        user_repo.expect_delete()
-            .returning(move |id| {
-                if id == test_target_user_id {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
-
-        // Create shared mock repository
-        let shared_user_repo = Arc::new(user_repo);
-
-        let auth_service = Arc::new(AuthService::new(
-            shared_user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
-
-        // Use the same shared repository for admin routes
-        let admin_user_repo: Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait> = shared_user_repo.clone();
+        // Create standard mock services
+        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -4694,8 +1447,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -4711,5 +1464,236 @@ mod admin_user_delete_tests {
         let resp = test::call_service(&app, req).await;
         // Actix-web returns 404 for invalid UUID in path parameter, not 400
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[cfg(test)]
+mod enhanced_integration_tests {
+    use super::*;
+
+    /// ENHANCED PATTERN DEMO: Get user with integration test utilities
+    #[actix_rt::test]
+    async fn test_get_user_enhanced_integration() {
+        // Use enhanced TestConfig for integration testing
+        let config = EnhancedTestConfig::new_for_integration_tests().await;
+        
+        // Seed test data using enhanced utilities
+        let admin_data = seed_admin_test_data(config.pool.as_ref()).await;
+        
+        // Create request using admin token
+        let admin_token = generate_test_token(admin_data.0.id, "admin", 3600)
+            .expect("Failed to generate admin token");
+        
+        let req = create_auth_request(
+            "GET",
+            &format!("/api/admin/users/{}", admin_data.1.id),
+            &admin_token
+        ).to_request();
+
+        // Set up real services with database
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
+        
+        let user_repo = Arc::new(oxidizedoasis_websands::core::user::repository::UserRepository::new((*config.pool).clone()));
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
+
+        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
+            config.pool.as_ref().clone(),
+            email_service.clone(),
+            auth_service,
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+        );
+
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(user_handler))
+                .app_data(web::Data::new(config.config.clone()))
+                .app_data(web::Data::new(token_revocation_service as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(user_repo as Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait>))
+                .service(
+                    web::scope("/api/admin/users")
+                        .wrap(admin_auth)
+                        .route("", web::get().to(list_users))
+                        .route("/{id}", web::get().to(get_user))
+                        .route("/{id}/role", web::put().to(update_user_role))
+                        .route("/{id}/username", web::put().to(update_user_username))
+                        .route("/{id}/status", web::put().to(update_user_status))
+                        .route("/{id}", web::delete().to(delete_user))
+                )
+        ).await;
+        
+        let resp = test::call_service(&app, req).await;
+        
+        // Use enhanced assertion helper
+        // Use enhanced assertion helper
+        let body: Value = test::read_body_json(resp).await;
+        assert_user_response(&body, "target-user@test.com", "user");
+        
+        // Verify user exists in database using enhanced utility
+        assert_user_in_database(config.pool.as_ref(), admin_data.1.id, "target-user@test.com").await;
+    }
+
+    /// ENHANCED PATTERN DEMO: Update user role with scenario builder
+    #[actix_rt::test]
+    async fn test_update_user_role_with_scenario() {
+        // Use scenario builder for complex workflow testing
+        let scenario = UserManagementScenario::new()
+            .await
+            .with_admin_user()
+            .await
+            .with_target_users(1)
+            .await;
+            
+        // Use the same config from the scenario
+        let config = &scenario.config;
+            
+        let update_data = UpdateRoleRequest {
+            role: "admin".to_string(),
+        };
+
+        let admin_token = generate_test_token(scenario.admin().id, "admin", 3600)
+            .expect("Failed to generate admin token");
+        
+        let req = create_auth_request(
+            "PUT",
+            &format!("/api/admin/users/{}/role", scenario.target_user(0).id),
+            &admin_token
+        )
+        .set_json(&update_data)
+        .to_request();
+
+        // Set up real services with database
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
+        
+        let user_repo = Arc::new(oxidizedoasis_websands::core::user::repository::UserRepository::new((*config.pool).clone()));
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
+
+        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
+            config.pool.as_ref().clone(),
+            email_service.clone(),
+            auth_service,
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+        );
+
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(user_handler))
+                .app_data(web::Data::new(config.config.clone()))
+                .app_data(web::Data::new(token_revocation_service as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(user_repo as Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait>))
+                .service(
+                    web::scope("/api/admin/users")
+                        .wrap(admin_auth)
+                        .route("", web::get().to(list_users))
+                        .route("/{id}", web::get().to(get_user))
+                        .route("/{id}/role", web::put().to(update_user_role))
+                        .route("/{id}/username", web::put().to(update_user_username))
+                        .route("/{id}/status", web::put().to(update_user_status))
+                        .route("/{id}", web::delete().to(delete_user))
+                )
+        ).await;
+        
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"]["role"], "admin");
+        assert_eq!(body["data"]["id"], scenario.target_user(0).id.to_string());
+        
+        // Verify role update in database
+        assert_user_in_database(config.pool.as_ref(), scenario.target_user(0).id, &scenario.target_user(0).email.clone().unwrap()).await;
+    }
+
+    /// ENHANCED PATTERN DEMO: Error handling with assertion helpers
+    #[actix_rt::test]
+    async fn test_user_not_found_enhanced_assertions() {
+        let config = EnhancedTestConfig::new_for_integration_tests().await;
+        let admin_data = seed_admin_test_data(config.pool.as_ref()).await;
+        let non_existent_id = Uuid::new_v4();
+        
+        let admin_token = generate_test_token(admin_data.0.id, "admin", 3600)
+            .expect("Failed to generate admin token");
+
+        let req = create_auth_request(
+            "GET",
+            &format!("/api/admin/users/{}", non_existent_id),
+            &admin_token
+        ).to_request();
+
+        // Set up real services with database
+        let admin_auth = HttpAuthentication::bearer(admin_validator);
+        
+        let user_repo = Arc::new(oxidizedoasis_websands::core::user::repository::UserRepository::new((*config.pool).clone()));
+        let email_service = Arc::new(create_mock_email_service());
+        let token_revocation_service = Arc::new(create_mock_token_revocation_service());
+        let active_token_service = Arc::new(create_mock_active_token_service());
+        
+        let auth_service = Arc::new(AuthService::new(
+            user_repo.clone(),
+            common::TEST_JWT_SECRET.to_string(),
+            common::TEST_AUDIENCE.to_string(),
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+            email_service.clone(),
+        ));
+
+        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
+            config.pool.as_ref().clone(),
+            email_service.clone(),
+            auth_service,
+            token_revocation_service.clone(),
+            active_token_service.clone(),
+        );
+
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(user_handler))
+                .app_data(web::Data::new(config.config.clone()))
+                .app_data(web::Data::new(token_revocation_service as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(user_repo as Arc<dyn oxidizedoasis_websands::core::user::UserRepositoryTrait>))
+                .service(
+                    web::scope("/api/admin/users")
+                        .wrap(admin_auth)
+                        .route("", web::get().to(list_users))
+                        .route("/{id}", web::get().to(get_user))
+                        .route("/{id}/role", web::put().to(update_user_role))
+                        .route("/{id}/username", web::put().to(update_user_username))
+                        .route("/{id}/status", web::put().to(update_user_status))
+                        .route("/{id}", web::delete().to(delete_user))
+                )
+        ).await;
+        
+        let resp = test::call_service(&app, req).await;
+        
+        // Use enhanced error assertion helper
+        let body: Value = test::read_body_json(resp).await;
+        assert_error_response(&body, "not found");
     }
 }

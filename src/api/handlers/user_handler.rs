@@ -12,7 +12,7 @@ use crate::core::email::EmailServiceTrait;
 use crate::common::error::ApiErrorType;
 use crate::core::auth::token_revocation::TokenRevocationServiceTrait; // Added
 use crate::core::auth::active_token::ActiveTokenServiceTrait; // Added
-use crate::common::validation::{UserInput, LoginInput, TokenQuery};
+use crate::common::validation::{UserInput, LoginInput, RegisterInput, TokenQuery};
 use crate::core::user::model::{PasswordResetRequest, PasswordResetSubmit};
 use time;
 use crate::infrastructure::middleware::csrf::generate_csrf_token;
@@ -48,34 +48,55 @@ impl UserHandler {
 
     pub async fn create_user(
         &self,
-        user_input: web::Json<UserInput>,
+        register_input: web::Json<RegisterInput>,
     ) -> impl Responder {
         debug!("Received create_user request");
 
-        match self.user_service.create_user(user_input.into_inner()).await {
-            Ok((user, _)) => {
-                info!("User created successfully: {}", user.id);
-                HttpResponse::Created().json(json!({
-                    "success": true,
-                    "message": "User created successfully. Please check your email for verification.",
-                    "data": {
-                        "user": {
-                            "id": user.id,
-                            "username": user.username,
-                            "email": user.email,
-                            "is_email_verified": user.is_email_verified,
-                            "created_at": user.created_at,
-                            "is_active": user.is_active
-                        }
+        // Validate and sanitize input first
+        match crate::common::validation::validate_and_sanitize_register_input(register_input.into_inner()) {
+            Ok(validated_input) => {
+                // Convert RegisterInput to UserInput for the service layer
+                let user_input = UserInput {
+                    username: validated_input.username,
+                    email: Some(validated_input.email),
+                    password: Some(validated_input.password),
+                };
+                match self.user_service.create_user(user_input).await {
+                    Ok((user, _)) => {
+                        info!("User created successfully: {}", user.id);
+                        HttpResponse::Created().json(json!({
+                            "success": true,
+                            "message": "User created successfully. Please check your email for verification.",
+                            "data": {
+                                "user": {
+                                    "id": user.id,
+                                    "username": user.username,
+                                    "email": user.email,
+                                    "is_email_verified": user.is_email_verified,
+                                    "created_at": user.created_at,
+                                    "is_active": user.is_active
+                                }
+                            }
+                        }))
+                    },
+                    Err(e) => {
+                        error!("Failed to create user: {:?}", e);
+                        HttpResponse::BadRequest().json(json!({
+                            "success": false,
+                            "message": e.to_string(),
+                            "error": e.to_string()
+                        }))
                     }
-                }))
+                }
             },
-            Err(e) => {
-                error!("Failed to create user: {:?}", e);
+            Err(validation_errors) => {
+                error!("Validation failed for create_user: {:?}", validation_errors);
+                let combined_message = format!("Validation error: {:?}", validation_errors);
+                
                 HttpResponse::BadRequest().json(json!({
                     "success": false,
-                    "message": e.to_string(),
-                    "error": e.to_string()
+                    "message": combined_message,
+                    "error": "Validation failed"
                 }))
             }
         }
@@ -811,9 +832,9 @@ pub fn create_handler(
 // Route handler functions
 pub async fn create_user_handler(
     handler: web::Data<UserHandler>,
-    user_input: web::Json<UserInput>,
+    register_input: web::Json<RegisterInput>,
 ) -> impl Responder {
-    handler.create_user(user_input).await
+    handler.create_user(register_input).await
 }
 
 pub async fn login_user_handler(

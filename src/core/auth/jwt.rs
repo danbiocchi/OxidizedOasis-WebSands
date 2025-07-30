@@ -211,10 +211,11 @@ pub async fn validate_jwt(
         validation.set_issuer(&[iss_str.as_str()]);
     }
     
+    println!("🔍 DEBUG: About to validate JWT with audience: {:?}, issuer: {:?}", expected_audience, expected_issuer);
     match decode::<Claims>(token, &DecodingKey::from_secret(secret.as_ref()), &validation) {
         Ok(token_data) => {
             let claims = token_data.claims;
-            debug!("JWT validation - decoded claims: aud={}, iss={}, role={}, sub={}",
+            println!("🔍 DEBUG: JWT validation SUCCESS - decoded claims: aud={}, iss={}, role={}, sub={}",
                    claims.aud, claims.iss, claims.role, claims.sub);
             
             if let Some(expected) = expected_type {
@@ -237,6 +238,8 @@ pub async fn validate_jwt(
             Ok(claims)
         },
         Err(e) => {
+            println!("🔍 DEBUG: JWT validation FAILED: {:?}", e);
+            println!("🔍 DEBUG: Error kind: {:?}", e.kind());
             error!("JWT validation failed: {:?}", e);
             Err(e)
         }

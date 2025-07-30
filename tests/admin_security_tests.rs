@@ -2,29 +2,22 @@
 //! Tests all admin security endpoints with various scenarios and edge cases
 
 use actix_web::{test, web, App, http::StatusCode};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use oxidizedoasis_websands::api::routes::admin::security::{
-    list_incidents, create_incident, get_incident, update_incident_status,
-    IncidentSeverity, IncidentStatus
+    list_incidents, create_incident, get_incident, update_incident_status
 };
-use oxidizedoasis_websands::core::user::UserRepositoryTrait;
-use oxidizedoasis_websands::core::auth::{AuthService};
-use oxidizedoasis_websands::core::auth::active_token::ActiveTokenService;
-use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationService;
-use oxidizedoasis_websands::core::email::service::EmailService;
-use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
 
 mod common;
 use common::{
-    create_test_app_config, create_test_user, generate_test_token,
-    test_data::*, http::*, env::with_env_vars, mocks::*
+    UnifiedTestFixture, create_test_user,
+    test_data::*, http::*, mocks::*
 };
+use oxidizedoasis_websands::core::auth::service::AuthService;
 
 /// Test structure for creating security incidents
 #[derive(serde::Serialize)]
@@ -42,101 +35,22 @@ struct UpdateIncidentStatusRequest {
     resolution_notes: Option<String>,
 }
 
-/// Test fixture for admin security tests
-struct AdminSecurityTestFixture {
-    config: AppConfig,
-    test_user_id: Uuid,
-    test_admin_id: Uuid,
-    test_incident_id: Uuid,
-    test_user_token: String,
-    test_admin_token: String,
-}
-
-impl AdminSecurityTestFixture {
-    async fn new() -> Self {
-        // Ensure environment variables are set before generating tokens
-        use std::sync::Mutex;
-        static ENV_SETUP_MUTEX: Mutex<()> = Mutex::new(());
-        
-        let _lock = ENV_SETUP_MUTEX.lock().unwrap();
-        
-        // Set up environment variables consistently
-        std::env::set_var("JWT_SECRET", common::TEST_JWT_SECRET);
-        std::env::set_var("JWT_AUDIENCE", common::TEST_AUDIENCE);
-        std::env::set_var("JWT_ISSUER", common::TEST_ISSUER);
-        
-        let config = create_test_app_config();
-        let test_user_id = Uuid::new_v4();
-        let test_admin_id = Uuid::new_v4();
-        let test_incident_id = Uuid::new_v4();
-        
-        let test_user_token = generate_test_token(test_user_id, "user", 3600)
-            .expect("Failed to generate user token");
-        let test_admin_token = generate_test_token(test_admin_id, "admin", 3600)
-            .expect("Failed to generate admin token");
-
-        Self {
-            config,
-            test_user_id,
-            test_admin_id,
-            test_incident_id,
-            test_user_token,
-            test_admin_token,
-        }
-    }
-
-}
-
 #[cfg(test)]
 mod admin_security_incidents_list_tests {
     use super::*;
 
     #[actix_rt::test]
     async fn test_list_incidents_success_as_admin() {
-        let fixture = AdminSecurityTestFixture::new().await;
-        
-        // Create mock services
-        let mut user_repo = create_mock_user_repository();
-        let email_service = Arc::new(create_mock_email_service());
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
+
+        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+            fixture.test_user_id,
+            fixture.test_admin_id
+        ).await;
+
+        // Create individual services for app_data
         let token_revocation_service = Arc::new(create_mock_token_revocation_service());
         let active_token_service = Arc::new(create_mock_active_token_service());
-        
-        // Set up user repository expectations
-        let test_user = create_test_user(fixture.test_user_id, TEST_USER_USERNAME, TEST_USER_EMAIL, true, "user");
-        let test_admin = create_test_user(fixture.test_admin_id, TEST_ADMIN_USERNAME, TEST_ADMIN_EMAIL, true, "admin");
-        
-        let test_user_id = fixture.test_user_id;
-        let test_admin_id = fixture.test_admin_id;
-        
-        // Mock find_by_id for authentication
-        user_repo.expect_find_by_id()
-            .returning(move |id| {
-                if id == test_user_id {
-                    Ok(Some(test_user.clone()))
-                } else if id == test_admin_id {
-                    Ok(Some(test_admin.clone()))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        let auth_service = Arc::new(AuthService::new(
-            Arc::new(user_repo),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-            email_service.clone(),
-        ));
-
-        let user_handler = oxidizedoasis_websands::api::handlers::user_handler::create_handler(
-            oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed create database pool: {}", e)),
-            email_service.clone(),
-            auth_service,
-            token_revocation_service.clone(),
-            active_token_service.clone(),
-        );
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -145,7 +59,7 @@ mod admin_security_incidents_list_tests {
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
                 .app_data(web::Data::new(token_revocation_service.clone() as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(active_token_service))
+                .app_data(web::Data::new(active_token_service.clone()))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -174,7 +88,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_with_pagination() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();
@@ -247,7 +161,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_with_severity_filter() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/incidents?severity=critical", &fixture.test_admin_token)
             .to_request();
@@ -322,7 +236,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_with_status_filter() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/incidents?status=open", &fixture.test_admin_token)
             .to_request();
@@ -397,7 +311,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_with_date_range() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let start_date = "2024-01-01T00:00:00Z";
         let end_date = "2024-12-31T23:59:59Z";
@@ -474,7 +388,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_per_page_limit() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Test per_page limit is enforced (max 100)
         let req = create_auth_request("GET", "/api/admin/security/incidents?per_page=150", &fixture.test_admin_token)
@@ -550,7 +464,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_forbidden_as_user() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/incidents", &fixture.test_user_token)
             .to_request();
@@ -622,7 +536,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_unauthorized_without_token() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/admin/security/incidents")
@@ -695,7 +609,7 @@ mod admin_security_incidents_list_tests {
 
     #[actix_rt::test]
     async fn test_list_incidents_invalid_token() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/incidents", "invalid.jwt.token")
             .to_request();
@@ -772,7 +686,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_success() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "Security Breach Detected".to_string(),
@@ -861,7 +775,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_success_without_assignment() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "Minor Security Issue".to_string(),
@@ -948,7 +862,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_all_severity_levels() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let severities = vec!["low", "medium", "high", "critical"];
         
@@ -1035,7 +949,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_empty_title() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "".to_string(),
@@ -1118,7 +1032,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_empty_description() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "Test Title".to_string(),
@@ -1201,7 +1115,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_forbidden_as_user() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "User Incident".to_string(),
@@ -1281,7 +1195,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_unauthorized_without_token() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let incident_data = CreateIncidentRequest {
             title: "Unauthorized Incident".to_string(),
@@ -1362,7 +1276,7 @@ mod admin_security_incidents_create_tests {
 
     #[actix_rt::test]
     async fn test_create_incident_malformed_json() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::post()
             .uri("/api/admin/security/incidents")
@@ -1443,9 +1357,9 @@ mod admin_security_incidents_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_incident_not_found() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
-        let req = create_auth_request("GET", &format!("/api/admin/security/incidents/{}", fixture.test_incident_id), &fixture.test_admin_token)
+        let req = create_auth_request("GET", &format!("/api/admin/security/incidents/{}", fixture.test_target_user_id), &fixture.test_admin_token)
             .to_request();
 
         // Create mock services  
@@ -1518,9 +1432,9 @@ mod admin_security_incidents_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_incident_forbidden_as_user() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
-        let req = create_auth_request("GET", &format!("/api/admin/security/incidents/{}", fixture.test_incident_id), &fixture.test_user_token)
+        let req = create_auth_request("GET", &format!("/api/admin/security/incidents/{}", fixture.test_target_user_id), &fixture.test_user_token)
             .to_request();
 
         // Create mock services  
@@ -1590,10 +1504,10 @@ mod admin_security_incidents_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_incident_unauthorized_without_token() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
-            .uri(&format!("/api/admin/security/incidents/{}", fixture.test_incident_id))
+            .uri(&format!("/api/admin/security/incidents/{}", fixture.test_target_user_id))
             .to_request();
 
         // Create mock services  
@@ -1663,7 +1577,7 @@ mod admin_security_incidents_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_incident_invalid_uuid() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/incidents/invalid-uuid", &fixture.test_admin_token)
             .to_request();
@@ -1740,14 +1654,14 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_not_found() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateIncidentStatusRequest {
             status: "resolved".to_string(),
             resolution_notes: Some("Issue resolved".to_string()),
         };
 
-        let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_incident_id), &fixture.test_admin_token)
+        let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_target_user_id), &fixture.test_admin_token)
             .set_json(&update_data)
             .to_request();
 
@@ -1821,7 +1735,7 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_valid_statuses() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let valid_statuses = vec!["open", "in_progress", "resolved", "closed"];
         
@@ -1835,7 +1749,7 @@ mod admin_security_incidents_update_tests {
                 },
             };
 
-            let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_incident_id), &fixture.test_admin_token)
+            let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_target_user_id), &fixture.test_admin_token)
                 .set_json(&update_data)
                 .to_request();
 
@@ -1908,14 +1822,14 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_forbidden_as_user() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateIncidentStatusRequest {
             status: "resolved".to_string(),
             resolution_notes: Some("User trying to resolve".to_string()),
         };
 
-        let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_incident_id), &fixture.test_user_token)
+        let req = create_auth_request("PUT", &format!("/api/admin/security/incidents/{}/status", fixture.test_target_user_id), &fixture.test_user_token)
             .set_json(&update_data)
             .to_request();
 
@@ -1986,7 +1900,7 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_unauthorized_without_token() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateIncidentStatusRequest {
             status: "resolved".to_string(),
@@ -1994,7 +1908,7 @@ mod admin_security_incidents_update_tests {
         };
 
         let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/security/incidents/{}/status", fixture.test_incident_id))
+            .uri(&format!("/api/admin/security/incidents/{}/status", fixture.test_target_user_id))
             .set_json(&update_data)
             .to_request();
 
@@ -2065,7 +1979,7 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_invalid_uuid() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateIncidentStatusRequest {
             status: "resolved".to_string(),
@@ -2143,10 +2057,10 @@ mod admin_security_incidents_update_tests {
 
     #[actix_rt::test]
     async fn test_update_incident_status_malformed_json() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::put()
-            .uri(&format!("/api/admin/security/incidents/{}/status", fixture.test_incident_id))
+            .uri(&format!("/api/admin/security/incidents/{}/status", fixture.test_target_user_id))
             .insert_header(("Authorization", format!("Bearer {}", fixture.test_admin_token)))
             .set_payload("{invalid json")
             .insert_header(("content-type", "application/json"))
@@ -2224,7 +2138,7 @@ mod admin_security_edge_case_tests {
 
     #[actix_rt::test]
     async fn test_security_endpoints_method_not_allowed() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Test PATCH on incidents list endpoint (should be METHOD_NOT_ALLOWED)
         let req = test::TestRequest::patch()
@@ -2300,7 +2214,7 @@ mod admin_security_edge_case_tests {
 
     #[actix_rt::test]
     async fn test_security_endpoints_route_not_found() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/security/nonexistent", &fixture.test_admin_token)
             .to_request();
@@ -2372,7 +2286,7 @@ mod admin_security_edge_case_tests {
 
     #[actix_rt::test]
     async fn test_security_incidents_large_pagination() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Test with very large page number
         let req = create_auth_request("GET", "/api/admin/security/incidents?page=999999&per_page=1", &fixture.test_admin_token)
@@ -2449,7 +2363,7 @@ mod admin_security_edge_case_tests {
 
     #[actix_rt::test]
     async fn test_security_incidents_zero_page() {
-        let fixture = AdminSecurityTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Test with page=0 (should default to 1)
         let req = create_auth_request("GET", "/api/admin/security/incidents?page=0", &fixture.test_admin_token)

@@ -4,6 +4,7 @@ use wasm_bindgen_futures::spawn_local;
 use gloo::net::http::Request; // Import Request service directly
 use serde::{Deserialize, Serialize}; // Import serde traits
 use serde_json::{self, json}; // Import serde_json for parsing and json! macro
+use crate::services::request::RequestBuilderExt;
 
 // Helper Structs for API responses
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

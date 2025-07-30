@@ -23,49 +23,9 @@ use oxidizedoasis_websands::common::error::ApiErrorType;
 
 mod common;
 use common::{
-    create_test_app_config, create_test_user, generate_test_token,
-    test_data::*, http::*, env::with_env_vars, mocks::*
+    UnifiedTestFixture, create_test_user, create_standard_mock_services,
+    test_data::*, http::*, mocks::*
 };
-
-/// Test fixture for user CRUD tests
-struct UserCrudTestFixture {
-    config: AppConfig,
-    test_user_id: Uuid,
-    test_admin_id: Uuid,
-    test_target_user_id: Uuid,
-    test_admin_token: String,
-}
-
-impl UserCrudTestFixture {
-    async fn new() -> Self {
-        // Ensure environment variables are set before generating tokens
-        use std::sync::Mutex;
-        static ENV_SETUP_MUTEX: Mutex<()> = Mutex::new(());
-        
-        let _lock = ENV_SETUP_MUTEX.lock().unwrap();
-        
-        // Set up environment variables consistently
-        std::env::set_var("JWT_SECRET", common::TEST_JWT_SECRET);
-        std::env::set_var("JWT_AUDIENCE", common::TEST_AUDIENCE);
-        std::env::set_var("JWT_ISSUER", common::TEST_ISSUER);
-        
-        let config = create_test_app_config();
-        let test_user_id = Uuid::new_v4();
-        let test_admin_id = Uuid::new_v4();
-        let test_target_user_id = Uuid::new_v4();
-        
-        let test_admin_token = generate_test_token(test_admin_id, "admin", 3600)
-            .expect("Failed to generate admin token");
-
-        Self {
-            config,
-            test_user_id,
-            test_admin_id,
-            test_target_user_id,
-            test_admin_token,
-        }
-    }
-}
 
 // Helper function to create a mock user
 fn mock_user(id: Uuid, username: &str, role: &str, is_active: bool) -> User {
@@ -90,7 +50,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_self_edit_forbidden() {
-        let fixture = UserCrudTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();
@@ -160,7 +120,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_other_user_success() {
-        let fixture = UserCrudTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
         // Create mock services
@@ -235,7 +195,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_self_edit_forbidden() {
-        let fixture = UserCrudTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();
@@ -304,7 +264,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_other_user_success() {
-        let fixture = UserCrudTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
         // Create mock services
@@ -384,7 +344,7 @@ mod tests {
     // This is not strictly required by the subtask but confirms the pattern.
     #[actix_rt::test]
     async fn test_update_user_username_self_edit_forbidden() {
-        let fixture = UserCrudTestFixture::new().await;
+        let fixture = UnifiedTestFixture::new_with_mocks().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();

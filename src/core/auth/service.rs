@@ -97,22 +97,27 @@ impl AuthService {
             }
         };
 
+        println!("🔍 DEBUG: AuthService.validate_auth - Looking up user by ID: {}", claims.sub);
         let user = self.user_repository.find_by_id(claims.sub)
             .await
             .map_err(|e| {
                 warn!("Validate_auth: User repository error on find_by_id for {}: {:?}", claims.sub, e);
-                AuthError::new(AuthErrorType::InvalidToken)
+                return AuthError::new(AuthErrorType::InvalidToken)
             })?
             .ok_or_else(|| {
                 warn!("Validate_auth: User not found by id from token: {}", claims.sub);
-                AuthError::new(AuthErrorType::InvalidToken)
+                println!("🔍 DEBUG: AuthService.validate_auth - User NOT FOUND for ID: {}", claims.sub);
+                return AuthError::new(AuthErrorType::InvalidToken)
             })?;
 
+        println!("🔍 DEBUG: AuthService.validate_auth - Found user: {}, email_verified: {}", user.username, user.is_email_verified);
         if !user.is_email_verified {
             warn!("Validate_auth: Email not verified for user from token: {}", user.username);
+            println!("🔍 DEBUG: AuthService.validate_auth - EMAIL NOT VERIFIED for user: {}", user.username);
             return Err(AuthError::new(AuthErrorType::EmailNotVerified));
         }
 
+        println!("🔍 DEBUG: AuthService.validate_auth - SUCCESS for user: {}", user.username);
         Ok(claims)
     }
 

@@ -156,6 +156,22 @@ impl UserService {
             })?;
             info!("User {} email updated to {} and marked as unverified. Verification token generated.", id, new_email_str);
 
+            // If username is also being updated, update it now
+            let mut final_user = user_after_email_update;
+            if validated_input.username != current_user.username {
+                info!("Username is also being changed for user: {} (from {} to {})", id, current_user.username, validated_input.username);
+                final_user = self.repository.update_username(current_user.id, &validated_input.username).await
+                    .map_err(|e| {
+                        error!("DB error updating username for user {}: {}", id, e);
+                        ApiError::from(DbError::from(e))
+                    })?
+                    .ok_or_else(|| {
+                        error!("User {} not found after username update, this should not happen.", id);
+                        ApiError::new("User consistency error after update", ApiErrorType::Internal)
+                    })?;
+                info!("Username updated for user: {} to {}", id, validated_input.username);
+            }
+
             let email_service = self.email_service.clone();
             let email_to_send = new_email_str.clone();
             let token_for_email = verification_token.clone();
@@ -168,7 +184,7 @@ impl UserService {
                 }
             });
 
-            let mut final_user = user_after_email_update;
+            // final_user is already set above, no need to reassign
 
             if password_being_changed {
                 info!("Password is also being changed for user: {}", id);
