@@ -219,3 +219,149 @@ pub mod mock { // Module is now unconditionally public
 // If #[automock] fails, this manual mock is the fallback.
 // The previous step commented out the /* ... */ block. Let's ensure it stays commented if automock is active.
 // The current file content shows it commented, so this diff will effectively uncomment it and apply cfg(test) internally.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::sync::Mutex;
+
+    // Global mutex to prevent concurrent environment variable modifications
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn setup_test_env() {
+        env::set_var("SMTP_USERNAME", "test@example.com");
+        env::set_var("SMTP_PASSWORD", "test_password");
+        env::set_var("SMTP_SERVER", "smtp.example.com");
+        env::set_var("FROM_EMAIL", "noreply@example.com");
+        env::set_var("APP_NAME", "TestApp");
+        env::set_var("EMAIL_FROM_NAME", "Test Application");
+        env::set_var("EMAIL_VERIFICATION_SUBJECT", "Verify Your Email - TestApp");
+        env::set_var("EMAIL_PASSWORD_RESET_SUBJECT", "Reset Your Password - TestApp");
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+    }
+
+    fn cleanup_test_env() {
+        let vars_to_remove = [
+            "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_SERVER", "FROM_EMAIL",
+            "APP_NAME", "EMAIL_FROM_NAME", "EMAIL_VERIFICATION_SUBJECT",
+            "EMAIL_PASSWORD_RESET_SUBJECT", "ENVIRONMENT", "DEVELOPMENT_URL", "PRODUCTION_URL"
+        ];
+        
+        for var in &vars_to_remove {
+            env::remove_var(var);
+        }
+    }
+
+    #[test]
+    fn test_email_service_new() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env();
+        setup_test_env();
+        
+        let email_service = EmailService::new();
+        
+        // Test that the service was created successfully
+        // We can't access private fields directly, but creation success means env vars were read
+        drop(email_service);
+        
+        cleanup_test_env();
+    }
+
+    #[test]
+    #[should_panic(expected = "SMTP_USERNAME must be set")]
+    fn test_email_service_new_missing_smtp_username() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env();
+        
+        // Set all vars except SMTP_USERNAME
+        env::set_var("SMTP_PASSWORD", "test_password");
+        env::set_var("SMTP_SERVER", "smtp.example.com");
+        env::set_var("FROM_EMAIL", "noreply@example.com");
+        env::set_var("APP_NAME", "TestApp");
+        env::set_var("EMAIL_FROM_NAME", "Test Application");
+        env::set_var("EMAIL_VERIFICATION_SUBJECT", "Verify Your Email");
+        env::set_var("EMAIL_PASSWORD_RESET_SUBJECT", "Reset Password");
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let _email_service = EmailService::new();
+    }
+
+    #[test]
+    fn test_get_base_url_development() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Clear the poison and continue
+                poisoned.into_inner()
+            }
+        };
+        cleanup_test_env();
+        
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:3000");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let base_url = EmailService::get_base_url();
+        assert_eq!(base_url, "http://localhost:3000");
+        
+        cleanup_test_env();
+    }
+
+    #[test]
+    fn test_get_base_url_production() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Clear the poison and continue
+                poisoned.into_inner()
+            }
+        };
+        cleanup_test_env();
+        
+        env::set_var("ENVIRONMENT", "production");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:3000");
+        env::set_var("PRODUCTION_URL", "https://myapp.com");
+        
+        let base_url = EmailService::get_base_url();
+        assert_eq!(base_url, "https://myapp.com");
+        
+        cleanup_test_env();
+    }
+
+    #[test]
+    #[should_panic(expected = "ENVIRONMENT must be set")]
+    fn test_get_base_url_missing_environment() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Clear the poison and continue
+                poisoned.into_inner()
+            }
+        };
+        cleanup_test_env();
+        
+        // Don't set ENVIRONMENT
+        let _base_url = EmailService::get_base_url();
+    }
+
+    #[test]
+    fn test_email_service_clone() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env();
+        setup_test_env();
+        
+        let email_service = EmailService::new();
+        let cloned_service = email_service.clone();
+        
+        // Both instances should be valid
+        drop(email_service);
+        drop(cloned_service);
+        
+        cleanup_test_env();
+    }
+}

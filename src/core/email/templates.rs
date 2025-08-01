@@ -122,3 +122,169 @@ impl EmailTemplate {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verification_template_render() {
+        let template = EmailTemplate::Verification {
+            verification_url: "https://example.com/verify?token=abc123".to_string(),
+            app_name: "TestApp".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Check that the rendered HTML contains expected elements
+        assert!(rendered.contains("<!DOCTYPE html>"));
+        assert!(rendered.contains("Verify Your Email"));
+        assert!(rendered.contains("https://example.com/verify?token=abc123"));
+        assert!(rendered.contains("TestApp"));
+        assert!(rendered.contains("Verify Email"));
+        assert!(rendered.contains("This link will expire in 24 hours"));
+        assert!(rendered.contains("If you didn't sign up for an account"));
+        
+        // Check that both URL placeholders are replaced
+        assert!(rendered.matches("https://example.com/verify?token=abc123").count() >= 2);
+        
+        // Check that both app name placeholders are replaced
+        assert!(rendered.matches("TestApp").count() >= 2);
+    }
+
+    #[test]
+    fn test_password_reset_template_render() {
+        let template = EmailTemplate::PasswordReset {
+            reset_url: "https://example.com/reset?token=xyz789".to_string(),
+            app_name: "MyApplication".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Check that the rendered HTML contains expected elements
+        assert!(rendered.contains("<!DOCTYPE html>"));
+        assert!(rendered.contains("Reset Your Password"));
+        assert!(rendered.contains("https://example.com/reset?token=xyz789"));
+        assert!(rendered.contains("MyApplication"));
+        assert!(rendered.contains("Reset Password"));
+        assert!(rendered.contains("This link will expire in 1 hour"));
+        assert!(rendered.contains("If you didn't request a password reset"));
+        
+        // Check that both URL placeholders are replaced
+        assert!(rendered.matches("https://example.com/reset?token=xyz789").count() >= 2);
+        
+        // Check that both app name placeholders are replaced
+        assert!(rendered.matches("MyApplication").count() >= 2);
+    }
+
+    #[test]
+    fn test_verification_template_with_special_characters() {
+        let template = EmailTemplate::Verification {
+            verification_url: "https://example.com/verify?token=abc&123".to_string(),
+            app_name: "Test & App".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Ensure special characters are preserved in URLs and text
+        assert!(rendered.contains("https://example.com/verify?token=abc&123"));
+        assert!(rendered.contains("Test & App"));
+    }
+
+    #[test]
+    fn test_password_reset_template_with_special_characters() {
+        let template = EmailTemplate::PasswordReset {
+            reset_url: "https://example.com/reset?token=xyz&789".to_string(),
+            app_name: "My App & Co".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Ensure special characters are preserved in URLs and text
+        assert!(rendered.contains("https://example.com/reset?token=xyz&789"));
+        assert!(rendered.contains("My App & Co"));
+    }
+
+    #[test]
+    fn test_verification_template_structure() {
+        let template = EmailTemplate::Verification {
+            verification_url: "http://localhost:3000/verify".to_string(),
+            app_name: "DevApp".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Test HTML structure elements
+        assert!(rendered.contains("<html>"));
+        assert!(rendered.contains("</html>"));
+        assert!(rendered.contains("<head>"));
+        assert!(rendered.contains("</head>"));
+        assert!(rendered.contains("<body"));
+        assert!(rendered.contains("</body>"));
+        assert!(rendered.contains("<table"));
+        assert!(rendered.contains("</table>"));
+        assert!(rendered.contains("<h1"));
+        assert!(rendered.contains("</h1>"));
+        
+        // Test CSS styling presence
+        assert!(rendered.contains("background-color:"));
+        assert!(rendered.contains("color:"));
+        assert!(rendered.contains("font-family:"));
+    }
+
+    #[test]
+    fn test_password_reset_template_structure() {
+        let template = EmailTemplate::PasswordReset {
+            reset_url: "http://localhost:3000/reset".to_string(),
+            app_name: "DevApp".to_string(),
+        };
+        
+        let rendered = template.render();
+        
+        // Test HTML structure elements
+        assert!(rendered.contains("<html>"));
+        assert!(rendered.contains("</html>"));
+        assert!(rendered.contains("<head>"));
+        assert!(rendered.contains("</head>"));
+        assert!(rendered.contains("<body"));
+        assert!(rendered.contains("</body>"));
+        assert!(rendered.contains("<table"));
+        assert!(rendered.contains("</table>"));
+        assert!(rendered.contains("<h1"));
+        assert!(rendered.contains("</h1>"));
+        
+        // Test CSS styling presence
+        assert!(rendered.contains("background-color:"));
+        assert!(rendered.contains("color:"));
+        assert!(rendered.contains("font-family:"));
+    }
+
+    #[test]
+    fn test_template_differences() {
+        let verification_template = EmailTemplate::Verification {
+            verification_url: "https://example.com/verify".to_string(),
+            app_name: "TestApp".to_string(),
+        };
+        
+        let reset_template = EmailTemplate::PasswordReset {
+            reset_url: "https://example.com/reset".to_string(),
+            app_name: "TestApp".to_string(),
+        };
+        
+        let verification_rendered = verification_template.render();
+        let reset_rendered = reset_template.render();
+        
+        // Ensure templates are different
+        assert_ne!(verification_rendered, reset_rendered);
+        
+        // Ensure verification template has verification-specific content
+        assert!(verification_rendered.contains("Verify Your Email"));
+        assert!(verification_rendered.contains("verify"));
+        assert!(verification_rendered.contains("24 hours"));
+        
+        // Ensure reset template has reset-specific content
+        assert!(reset_rendered.contains("Reset Your Password"));
+        assert!(reset_rendered.contains("reset"));
+        assert!(reset_rendered.contains("1 hour"));
+    }
+}

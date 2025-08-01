@@ -71,12 +71,125 @@ pub fn remove_tokens() {
     LocalStorage::delete(TOKEN_EXPIRY_KEY);
 }
 
-// Check if user is authenticated
-// This now relies on the server to check cookies
+// Global state for session validation
+thread_local! {
+    static SESSION_VALIDATION_STATE: RefCell<Option<bool>> = RefCell::new(None);
+    static VALIDATION_IN_PROGRESS: RefCell<bool> = RefCell::new(false);
+}
+
+// Check if user is authenticated with server-side validation
 #[allow(dead_code)]
 pub fn is_authenticated() -> bool {
-    // We'll check if we have a CSRF token as a proxy for being logged in
-    get_csrf_token().is_some()
+    // First check if we have a CSRF token
+    let has_csrf = get_csrf_token().is_some();
+    if !has_csrf {
+        log!("🔍 AUTH DEBUG: No CSRF token found");
+        return false;
+    }
+
+    // Check cached validation state
+    let cached_result = SESSION_VALIDATION_STATE.with(|state| *state.borrow());
+    
+    match cached_result {
+        Some(is_valid) => {
+            log!("🔍 AUTH DEBUG: Using cached validation result: {}", is_valid);
+            is_valid
+        }
+        None => {
+            // No cached result - trigger async validation if not already in progress
+            let validation_in_progress = VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow());
+            
+            if !validation_in_progress {
+                log!("🔍 AUTH DEBUG: Starting async session validation");
+                validate_session_async();
+            }
+            
+            // For now, assume authenticated (optimistic rendering)
+            // The validation will update the state and trigger re-renders as needed
+            log!("🔍 AUTH DEBUG: Optimistically assuming authenticated while validating");
+            true
+        }
+    }
+}
+
+// Asynchronous session validation function
+pub async fn validate_session() -> bool {
+    log!("🔍 AUTH DEBUG: Starting server-side session validation");
+    
+    // Check if we have a CSRF token first
+    let has_csrf = get_csrf_token().is_some();
+    if !has_csrf {
+        log!("🔍 AUTH DEBUG: No CSRF token - session invalid");
+        update_validation_state(false);
+        return false;
+    }
+
+    // Make a lightweight request to validate the session
+    // Using the /me endpoint as it requires authentication
+    match make_validation_request().await {
+        Ok(_) => {
+            log!("🔍 AUTH DEBUG: Server validation successful");
+            update_validation_state(true);
+            true
+        }
+        Err(e) => {
+            log!("🔍 AUTH DEBUG: Server validation failed: {}", e);
+            cleanup_stale_tokens();
+            update_validation_state(false);
+            false
+        }
+    }
+}
+
+// Helper function to make the validation request
+async fn make_validation_request() -> Result<(), String> {
+    use gloo::net::http::Request;
+    
+    let mut request = Request::get("/api/cookie/users/me");
+    
+    // Add CSRF token
+    if let Some(csrf_token) = get_csrf_token() {
+        request = request.header("X-CSRF-Token", &csrf_token);
+    }
+    
+    match request.send().await {
+        Ok(response) => {
+            if response.ok() {
+                Ok(())
+            } else {
+                Err(format!("Validation failed with status: {}", response.status()))
+            }
+        }
+        Err(e) => Err(format!("Network error during validation: {}", e))
+    }
+}
+
+// Update validation state and clear progress flag
+fn update_validation_state(is_valid: bool) {
+    SESSION_VALIDATION_STATE.with(|state| *state.borrow_mut() = Some(is_valid));
+    VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = false);
+}
+
+// Start async validation without blocking
+fn validate_session_async() {
+    VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = true);
+    
+    spawn_local(async move {
+        validate_session().await;
+    });
+}
+
+// Function to clean up stale tokens when validation fails
+fn cleanup_stale_tokens() {
+    log!("🔍 AUTH DEBUG: Cleaning up stale tokens");
+    remove_tokens();
+}
+
+// Function to reset validation state (call this after login/logout)
+pub fn reset_validation_state() {
+    log!("🔍 AUTH DEBUG: Resetting validation state");
+    SESSION_VALIDATION_STATE.with(|state| *state.borrow_mut() = None);
+    VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = false);
 }
 
 // Setup a timer to refresh the token before it expires
@@ -202,6 +315,9 @@ pub fn store_csrf_token_from_response(data: &serde_json::Value) {
         }
     }
     
+    // Reset validation state after successful login
+    reset_validation_state();
+    
     // Try to extract access token for expiry calculation
     if let Some(access_token) = data.get("data")
         .and_then(|d| d.get("access_token"))
@@ -242,6 +358,9 @@ pub fn logout() {
     
     // Remove CSRF token from local storage
     remove_tokens();
+    
+    // Reset validation state
+    reset_validation_state();
 }
 
 // Refresh access token using refresh token

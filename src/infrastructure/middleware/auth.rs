@@ -622,7 +622,369 @@ mod tests {
         }).await;
     }
     
-    // TODO: Add tests for CookieAuthMiddleware (CSRF, etc., and audience checks)
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_missing_app_config() {
+        let mock_rev_service = MockTokenRevocationService::new();
+        let app_data_rev_service = Data::new(Arc::new(mock_rev_service) as Arc<dyn TokenRevocationServiceTrait>);
+        
+        let user_id = Uuid::new_v4();
+        let token_str = generate_test_token_auth(user_id, "user", TEST_JWT_SECRET_AUTH, 3600, Some("test_aud".to_string()), None);
+        
+        let srv_req = test::TestRequest::default()
+            .cookie(Cookie::new("access_token", token_str.clone()))
+            .app_data(app_data_rev_service.clone())
+            // Intentionally NOT adding app_config
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = cookie_auth_middleware(srv_req).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "Internal server configuration error (AppConfig missing in cookie_auth_middleware)");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_missing_revocation_service() {
+        let test_audience = "middleware_missing_revocation_aud".to_string();
+        let app_config = ActualAppConfig {
+            server: ServerConfig { host: "test".into(), port: "0".into() },
+            database: DatabaseConfig { url: "test_db_url".into(), max_connections: 1 },
+            jwt: JwtConfig { secret: TEST_JWT_SECRET_AUTH.into(), audience: test_audience.clone(), issuer: "test_iss".into() },
+        };
+        let app_data_config = Data::new(app_config);
+        
+        let user_id = Uuid::new_v4();
+        let token_str = generate_test_token_auth(user_id, "user", TEST_JWT_SECRET_AUTH, 3600, Some(test_audience), None);
+        
+        let srv_req = test::TestRequest::default()
+            .cookie(Cookie::new("access_token", token_str.clone()))
+            .app_data(app_data_config.clone())
+            // Intentionally NOT adding revocation service
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = cookie_auth_middleware(srv_req).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "Internal server configuration error");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_valid_token() {
+        let mut mock_rev_service = MockTokenRevocationService::new();
+        mock_rev_service.expect_is_token_revoked().returning(|_| Ok(false));
+        let app_data_rev_service = Data::new(Arc::new(mock_rev_service) as Arc<dyn TokenRevocationServiceTrait>);
+
+        let test_audience = "middleware_cookie_valid_aud".to_string();
+        let app_config = ActualAppConfig {
+            server: ServerConfig { host: "test".into(), port: "0".into() },
+            database: DatabaseConfig { url: "test_db_url".into(), max_connections: 1 },
+            jwt: JwtConfig { secret: TEST_JWT_SECRET_AUTH.into(), audience: test_audience.clone(), issuer: "test_iss".into() },
+        };
+        let app_data_config = Data::new(app_config);
+
+        let user_id = Uuid::new_v4();
+        let token_str = generate_test_token_auth(user_id, "user", TEST_JWT_SECRET_AUTH, 3600, Some(test_audience.clone()), None);
+        
+        let srv_req = test::TestRequest::default()
+            .cookie(Cookie::new("access_token", token_str.clone()))
+            .app_data(app_data_config.clone())
+            .app_data(app_data_rev_service.clone())
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = cookie_auth_middleware(srv_req).await;
+            assert!(result.is_ok());
+            let validated_req = result.unwrap();
+            let claims = validated_req.extensions().get::<Claims>().unwrap().clone();
+            assert_eq!(claims.sub, user_id);
+            assert_eq!(claims.aud, test_audience);
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_invalid_token() {
+        let mut mock_rev_service = MockTokenRevocationService::new();
+        mock_rev_service.expect_is_token_revoked().returning(|_| Ok(false)).times(0..); // May not be called if token is invalid
+        let app_data_rev_service = Data::new(Arc::new(mock_rev_service) as Arc<dyn TokenRevocationServiceTrait>);
+
+        let test_audience = "middleware_cookie_invalid_aud".to_string();
+        let app_config = ActualAppConfig {
+            server: ServerConfig { host: "test".into(), port: "0".into() },
+            database: DatabaseConfig { url: "test_db_url".into(), max_connections: 1 },
+            jwt: JwtConfig { secret: TEST_JWT_SECRET_AUTH.into(), audience: test_audience.clone(), issuer: "test_iss".into() },
+        };
+        let app_data_config = Data::new(app_config);
+
+        let invalid_token = "invalid.jwt.token";
+        
+        let srv_req = test::TestRequest::default()
+            .cookie(Cookie::new("access_token", invalid_token))
+            .app_data(app_data_config.clone())
+            .app_data(app_data_rev_service.clone())
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = cookie_auth_middleware(srv_req).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::UNAUTHORIZED);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "Invalid or expired token in cookie");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_no_access_token_cookie() {
+        let mock_rev_service = MockTokenRevocationService::new();
+        let app_data_rev_service = Data::new(Arc::new(mock_rev_service) as Arc<dyn TokenRevocationServiceTrait>);
+
+        let test_audience = "middleware_no_cookie_aud".to_string();
+        let app_config = ActualAppConfig {
+            server: ServerConfig { host: "test".into(), port: "0".into() },
+            database: DatabaseConfig { url: "test_db_url".into(), max_connections: 1 },
+            jwt: JwtConfig { secret: TEST_JWT_SECRET_AUTH.into(), audience: test_audience.clone(), issuer: "test_iss".into() },
+        };
+        let app_data_config = Data::new(app_config);
+        
+        let srv_req = test::TestRequest::default()
+            .app_data(app_data_config.clone())
+            .app_data(app_data_rev_service.clone())
+            // No access_token cookie
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = cookie_auth_middleware(srv_req).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::UNAUTHORIZED);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "No access token cookie found");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_jwt_auth_internal_missing_app_config() {
+        let mock_rev_service = MockTokenRevocationService::new();
+        let app_data_rev_service = Data::new(Arc::new(mock_rev_service) as Arc<dyn TokenRevocationServiceTrait>);
+        
+        let user_id = Uuid::new_v4();
+        let token_str = generate_test_token_auth(user_id, "user", TEST_JWT_SECRET_AUTH, 3600, Some("test_aud".to_string()), None);
+        let bearer_auth = BearerAuth::from_request(
+            &test::TestRequest::default().insert_header((header::AUTHORIZATION, format!("Bearer {}", token_str))).to_http_request(),
+            &mut test::TestRequest::default().to_srv_request().into_parts().1
+        ).await.unwrap();
+        
+        let srv_req = test::TestRequest::default()
+            .app_data(app_data_rev_service.clone())
+            // Intentionally NOT adding app_config
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = jwt_auth_validator_internal(srv_req, Some(bearer_auth)).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "Internal server configuration error (AppConfig missing)");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_jwt_auth_internal_missing_revocation_service() {
+        let test_audience = "middleware_missing_rev_svc_aud".to_string();
+        let app_config = ActualAppConfig {
+            server: ServerConfig { host: "test".into(), port: "0".into() },
+            database: DatabaseConfig { url: "test_db_url".into(), max_connections: 1 },
+            jwt: JwtConfig { secret: TEST_JWT_SECRET_AUTH.into(), audience: test_audience.clone(), issuer: "test_iss".into() },
+        };
+        let app_data_config = Data::new(app_config);
+        
+        let user_id = Uuid::new_v4();
+        let token_str = generate_test_token_auth(user_id, "user", TEST_JWT_SECRET_AUTH, 3600, Some(test_audience), None);
+        let bearer_auth = BearerAuth::from_request(
+            &test::TestRequest::default().insert_header((header::AUTHORIZATION, format!("Bearer {}", token_str))).to_http_request(),
+            &mut test::TestRequest::default().to_srv_request().into_parts().1
+        ).await.unwrap();
+        
+        let srv_req = test::TestRequest::default()
+            .app_data(app_data_config.clone())
+            // Intentionally NOT adding revocation service
+            .to_srv_request();
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let result = jwt_auth_validator_internal(srv_req, Some(bearer_auth)).await;
+            assert!(result.is_err());
+            let (err, _) = result.err().unwrap();
+            let http_response = err.error_response();
+            assert_eq!(http_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let srv_res = test::TestRequest::default().to_srv_response(http_response);
+            let body = test::read_body_json::<Value, _>(srv_res).await;
+            assert_eq!(body["message"], "Internal server configuration error (TokenRevocationService missing)");
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_transform_new_transform() {
+        let cookie_auth = CookieAuth::new();
+        let mock_service = test::ok_service();
+        let transform_result = cookie_auth.new_transform(mock_service).await;
+        assert!(transform_result.is_ok());
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_csrf_protection_missing_header() {
+        use actix_web::dev::{Service, Transform};
+        use futures_util::future::{ready, Ready};
+
+        let cookie_auth = CookieAuth::new();
+        let mock_service = test::ok_service();
+        let middleware = cookie_auth.new_transform(mock_service).await.unwrap();
+
+        // Create a POST request without CSRF header
+        let req = test::TestRequest::default()
+            .method(actix_web::http::Method::POST)
+            .cookie(Cookie::new("access_token", "test_token"))
+            .to_srv_request();
+
+        let response = middleware.call(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_csrf_protection_missing_cookie() {
+        use actix_web::dev::{Service, Transform};
+
+        let cookie_auth = CookieAuth::new();
+        let mock_service = test::ok_service();
+        let middleware = cookie_auth.new_transform(mock_service).await.unwrap();
+
+        // Create a POST request with CSRF header but no cookie
+        let req = test::TestRequest::default()
+            .method(actix_web::http::Method::POST)
+            .insert_header(("X-CSRF-Token", "test_csrf_token"))
+            .cookie(Cookie::new("access_token", "test_token"))
+            .to_srv_request();
+
+        let response = middleware.call(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_csrf_protection_mismatch() {
+        use actix_web::dev::{Service, Transform};
+
+        let cookie_auth = CookieAuth::new();
+        let mock_service = test::ok_service();
+        let middleware = cookie_auth.new_transform(mock_service).await.unwrap();
+
+        // Create a POST request with mismatched CSRF tokens
+        let req = test::TestRequest::default()
+            .method(actix_web::http::Method::POST)
+            .insert_header(("X-CSRF-Token", "header_token"))
+            .cookie(Cookie::new("csrf_token", "cookie_token"))
+            .cookie(Cookie::new("access_token", "test_token"))
+            .to_srv_request();
+
+        let response = middleware.call(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_get_request_bypass_csrf() {
+        use actix_web::dev::{Service, Transform};
+
+        run_test_with_env_vars_auth(vec![("JWT_SECRET", Some(TEST_JWT_SECRET_AUTH))], || async {
+            let cookie_auth = CookieAuth::new();
+            let mock_service = test::ok_service();
+            let middleware = cookie_auth.new_transform(mock_service).await.unwrap();
+
+            // Create a GET request - should bypass CSRF protection
+            let req = test::TestRequest::default()
+                .method(actix_web::http::Method::GET)
+                .cookie(Cookie::new("access_token", "test_token"))
+                .to_srv_request();
+
+            // Since we're using test::ok_service(), this will fail with missing config
+            // but should get past CSRF check
+            let response = middleware.call(req).await.unwrap();
+            // GET request should bypass CSRF and reach the next middleware layer
+            // The response status will depend on the token validation
+            assert!(response.status() == StatusCode::UNAUTHORIZED || response.status() == StatusCode::INTERNAL_SERVER_ERROR);
+        }).await;
+    }
+
+    #[actix_rt::test]
+    async fn test_cookie_auth_middleware_missing_access_token() {
+        use actix_web::dev::{Service, Transform};
+
+        let cookie_auth = CookieAuth::new();
+        let mock_service = test::ok_service();
+        let middleware = cookie_auth.new_transform(mock_service).await.unwrap();
+
+        // Create a GET request without access_token cookie
+        let req = test::TestRequest::default()
+            .method(actix_web::http::Method::GET)
+            .to_srv_request();
+
+        let response = middleware.call(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_rt::test]
+    async fn test_auth_error_display_formatting() {
+        let error = AuthError::new("Test error message".to_string(), 404);
+        let display_string = format!("{}", error);
+        assert_eq!(display_string, "Status 404 Not Found: Test error message");
+    }
+
+    #[actix_rt::test]
+    async fn test_auth_error_status_code_edge_cases() {
+        // Test with status code 0 (invalid)
+        let error_invalid = AuthError::new("Invalid status".to_string(), 0);
+        assert_eq!(error_invalid.status_code, StatusCode::INTERNAL_SERVER_ERROR);
+        
+        // Test with status code 999 (out of standard range but valid u16)
+        let error_999 = AuthError::new("Edge case".to_string(), 999);
+        assert_eq!(error_999.status_code, StatusCode::INTERNAL_SERVER_ERROR);
+        
+        // Test with valid informational status
+        let error_100 = AuthError::new("Continue".to_string(), 100);
+        assert_eq!(error_100.status_code, StatusCode::CONTINUE);
+        
+        // Test with valid success status
+        let error_200 = AuthError::new("OK".to_string(), 200);
+        assert_eq!(error_200.status_code, StatusCode::OK);
+    }
+
+    #[actix_rt::test]
+    async fn test_auth_error_canonical_reason_edge_cases() {
+        // Test with status that has no canonical reason
+        let error = AuthError::new("Custom error".to_string(), 299); // 299 doesn't have canonical reason
+        let response = error.error_response();
+        let srv_res = test::TestRequest::default().to_srv_response(response);
+        let body = test::read_body_json::<Value, _>(srv_res).await;
+        // Should fall back to "Error" for non-standard status codes
+        assert!(body["error"].as_str().unwrap().contains("Error") || body["error"].as_str().unwrap().contains("Success"));
+    }
+
+    // TODO: Add more comprehensive tests for CookieAuthMiddleware full integration with valid tokens
 }
 
 pub struct CookieAuth;
