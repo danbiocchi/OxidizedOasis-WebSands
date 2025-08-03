@@ -14,8 +14,8 @@ use oxidizedoasis_websands::infrastructure::config::AppConfig;
 use oxidizedoasis_websands::infrastructure::database::connection::create_pool;
 
 // Import test utilities
-mod common;
-use common::{create_test_config_with_cleanup, cleanup_test_database};
+
+use test_common::{create_test_config_with_cleanup, cleanup_test_database};
 
 #[cfg(test)]
 mod main_integration_tests {

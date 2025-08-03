@@ -122,7 +122,7 @@ impl DatabaseTestHelper {
 
     /// Run database migrations for testing
     pub async fn run_migrations(&self) -> Result<(), sqlx::Error> {
-        sqlx::migrate!("./migrations").run(self.pool.as_ref()).await?;
+        sqlx::migrate!("../../migrations").run(self.pool.as_ref()).await?;
         Ok(())
     }
 

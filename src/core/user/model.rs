@@ -358,4 +358,246 @@ mod tests {
         assert_eq!(token.token, cloned_token.token);
         assert_eq!(token.is_used, cloned_token.is_used);
     }
+    // Additional comprehensive tests from tests/user_model_tests.rs
+    
+    /// Test User struct creation and field access
+    #[test]
+    fn test_user_struct_creation() {
+        let user_id = Uuid::new_v4();
+        let now = Utc::now();
+        
+        let user = User {
+            id: user_id,
+            username: "testuser".to_string(),
+            email: Some("test@example.com".to_string()),
+            password_hash: "hashed_password".to_string(),
+            is_email_verified: true,
+            verification_token: None,
+            verification_token_expires_at: None,
+            created_at: now,
+            updated_at: now,
+            role: "user".to_string(),
+            is_active: true,
+        };
+
+        assert_eq!(user.id, user_id);
+        assert_eq!(user.username, "testuser");
+        assert_eq!(user.email, Some("test@example.com".to_string()));
+        assert_eq!(user.password_hash, "hashed_password");
+        assert!(user.is_email_verified);
+        assert_eq!(user.role, "user");
+        assert!(user.is_active);
+        assert_eq!(user.created_at, now);
+        assert_eq!(user.updated_at, now);
+    }
+
+    /// Test User struct with verification token
+    #[test]
+    fn test_user_with_verification_token() {
+        let user_id = Uuid::new_v4();
+        let now = Utc::now();
+        let expires_at = now + chrono::Duration::days(1);
+        
+        let user = User {
+            id: user_id,
+            username: "unverified_user".to_string(),
+            email: Some("unverified@example.com".to_string()),
+            password_hash: "hashed_password".to_string(),
+            is_email_verified: false,
+            verification_token: Some("verification_token_123".to_string()),
+            verification_token_expires_at: Some(expires_at),
+            created_at: now,
+            updated_at: now,
+            role: "user".to_string(),
+            is_active: true,
+        };
+
+        assert!(!user.is_email_verified);
+        assert_eq!(user.verification_token, Some("verification_token_123".to_string()));
+        assert_eq!(user.verification_token_expires_at, Some(expires_at));
+    }
+
+    /// Test User serialization and deserialization
+    #[test]
+    fn test_user_serialization() {
+        let user_id = Uuid::new_v4();
+        let now = Utc::now();
+        
+        let user = User {
+            id: user_id,
+            username: "serialize_test".to_string(),
+            email: Some("serialize@example.com".to_string()),
+            password_hash: "hashed_password".to_string(),
+            is_email_verified: true,
+            verification_token: None,
+            verification_token_expires_at: None,
+            created_at: now,
+            updated_at: now,
+            role: "admin".to_string(),
+            is_active: true,
+        };
+
+        // Test serialization
+        let serialized = serde_json::to_string(&user).expect("Should serialize");
+        assert!(serialized.contains("serialize_test"));
+        assert!(serialized.contains("serialize@example.com"));
+        assert!(serialized.contains("admin"));
+
+        // Test deserialization
+        let deserialized: User = serde_json::from_str(&serialized).expect("Should deserialize");
+        assert_eq!(deserialized.id, user.id);
+        assert_eq!(deserialized.username, user.username);
+        assert_eq!(deserialized.email, user.email);
+        assert_eq!(deserialized.role, user.role);
+    }
+
+    /// Test NewUser struct creation and serialization
+    #[test]
+    fn test_new_user_creation_comprehensive() {
+        let now = Utc::now();
+        let expires_at = now + chrono::Duration::days(1);
+        
+        let new_user = NewUser {
+            username: "newuser".to_string(),
+            email: Some("newuser@example.com".to_string()),
+            password_hash: "new_hashed_password".to_string(),
+            is_email_verified: false,
+            role: "user".to_string(),
+            verification_token: Some("new_token_456".to_string()),
+            verification_token_expires_at: Some(expires_at),
+        };
+
+        assert_eq!(new_user.username, "newuser");
+        assert_eq!(new_user.email, Some("newuser@example.com".to_string()));
+        assert!(!new_user.is_email_verified);
+        assert_eq!(new_user.role, "user");
+        assert_eq!(new_user.verification_token, Some("new_token_456".to_string()));
+
+        // Test serialization
+        let serialized = serde_json::to_string(&new_user).expect("Should serialize");
+        assert!(serialized.contains("newuser"));
+        assert!(serialized.contains("newuser@example.com"));
+    }
+
+    /// Test UserResponse creation and From trait implementation
+    #[test]
+    fn test_user_response_from_user_comprehensive() {
+        let user_id = Uuid::new_v4();
+        let now = Utc::now();
+        
+        let user = User {
+            id: user_id,
+            username: "response_test".to_string(),
+            email: Some("response@example.com".to_string()),
+            password_hash: "secret_hash".to_string(), // This should not appear in response
+            is_email_verified: true,
+            verification_token: Some("secret_token".to_string()), // This should not appear in response
+            verification_token_expires_at: Some(now + chrono::Duration::hours(1)),
+            created_at: now,
+            updated_at: now,
+            role: "user".to_string(),
+            is_active: true,
+        };
+
+        let response: UserResponse = user.into();
+        
+        assert_eq!(response.id, user_id);
+        assert_eq!(response.username, "response_test");
+        assert_eq!(response.email, Some("response@example.com".to_string()));
+        assert!(response.is_email_verified);
+        assert_eq!(response.created_at, now);
+        assert_eq!(response.role, "user");
+        assert!(response.is_active);
+
+        // Test serialization of response (should not contain sensitive data)
+        let serialized = serde_json::to_string(&response).expect("Should serialize");
+        assert!(!serialized.contains("secret_hash"));
+        assert!(!serialized.contains("secret_token"));
+        assert!(serialized.contains("response_test"));
+        assert!(serialized.contains("response@example.com"));
+    }
+
+    /// Test password reset request structs
+    #[test]
+    fn test_password_reset_request_structs() {
+        // Test PasswordResetRequest
+        let reset_request = PasswordResetRequest {
+            email: "reset@example.com".to_string(),
+        };
+        assert_eq!(reset_request.email, "reset@example.com");
+
+        // Test PasswordResetVerify
+        let reset_verify = PasswordResetVerify {
+            token: "verify_token_123".to_string(),
+        };
+        assert_eq!(reset_verify.token, "verify_token_123");
+
+        // Test PasswordResetSubmit
+        let reset_submit = PasswordResetSubmit {
+            token: "submit_token_456".to_string(),
+            new_password: "new_secure_password".to_string(),
+            confirm_password: "new_secure_password".to_string(),
+        };
+        assert_eq!(reset_submit.token, "submit_token_456");
+        assert_eq!(reset_submit.new_password, "new_secure_password");
+        assert_eq!(reset_submit.confirm_password, "new_secure_password");
+    }
+
+    /// Test password reset structs deserialization
+    #[test]
+    fn test_password_reset_deserialization() {
+        // Test PasswordResetRequest deserialization
+        let json = r#"{"email": "test@example.com"}"#;
+        let request: PasswordResetRequest = serde_json::from_str(json).expect("Should deserialize");
+        assert_eq!(request.email, "test@example.com");
+
+        // Test PasswordResetVerify deserialization
+        let json = r#"{"token": "abc123"}"#;
+        let verify: PasswordResetVerify = serde_json::from_str(json).expect("Should deserialize");
+        assert_eq!(verify.token, "abc123");
+
+        // Test PasswordResetSubmit deserialization
+        let json = r#"{"token": "xyz789", "new_password": "newpass", "confirm_password": "newpass"}"#;
+        let submit: PasswordResetSubmit = serde_json::from_str(json).expect("Should deserialize");
+        assert_eq!(submit.token, "xyz789");
+        assert_eq!(submit.new_password, "newpass");
+        assert_eq!(submit.confirm_password, "newpass");
+    }
+
+    /// Test edge cases and special scenarios
+    #[test]
+    fn test_edge_cases() {
+        // Test User with None email
+        let user_with_no_email = User {
+            id: Uuid::new_v4(),
+            username: "no_email_user".to_string(),
+            email: None,
+            password_hash: "hash".to_string(),
+            is_email_verified: false,
+            verification_token: None,
+            verification_token_expires_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            role: "user".to_string(),
+            is_active: true,
+        };
+
+        assert_eq!(user_with_no_email.email, None);
+        
+        let response: UserResponse = user_with_no_email.into();
+        assert_eq!(response.email, None);
+
+        // Test NewUser with None email
+        let new_user_no_email = NewUser {
+            username: "new_no_email".to_string(),
+            email: None,
+            password_hash: "hash".to_string(),
+            is_email_verified: false,
+            role: "user".to_string(),
+            verification_token: None,
+            verification_token_expires_at: None,
+        };
+
+        assert_eq!(new_user_no_email.email, None);
+    }
 }

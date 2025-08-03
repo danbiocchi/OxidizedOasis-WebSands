@@ -5,13 +5,13 @@ use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use serde_json::Value;
 
 #[path = "common/mod.rs"]
-mod common;
+
 
 #[actix_rt::test]
 async fn test_health_check_endpoint() {
     // Code reduction: 40 lines → 25 lines (38% reduction)
     // Use UnifiedTestFixture for standardized database setup
-    let fixture = common::UnifiedTestFixture::new_with_database().await;
+    let fixture = test_common::UnifiedTestFixture::new_with_database().await;
     
     let mut app = test::init_service(
         App::new()
@@ -44,7 +44,7 @@ async fn test_health_check_endpoint() {
 async fn test_database_connectivity_via_health_check() {
     // Code reduction: 39 lines → 15 lines (62% reduction)
     // Use UnifiedTestFixture for standardized database setup
-    let fixture = common::UnifiedTestFixture::new_with_database().await;
+    let fixture = test_common::UnifiedTestFixture::new_with_database().await;
 
     let mut app = test::init_service(
         App::new()

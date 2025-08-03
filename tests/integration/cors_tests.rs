@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use oxidizedoasis_websands::infrastructure::middleware::cors::configure_cors;
 
-mod common;
+
 
 // Global mutex to prevent environment variable interference between parallel tests
 static ENV_MUTEX: Mutex<()> = Mutex::new(());

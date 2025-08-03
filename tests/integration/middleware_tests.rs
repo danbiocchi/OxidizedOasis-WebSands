@@ -14,8 +14,8 @@ use oxidizedoasis_websands::infrastructure::middleware::{
 use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait;
 
-mod common;
-use common::{
+
+use test_common::{
     create_test_app_config, generate_test_token, create_test_claims,
     mocks::*, env::with_env_vars, TEST_JWT_SECRET, TEST_AUDIENCE
 };

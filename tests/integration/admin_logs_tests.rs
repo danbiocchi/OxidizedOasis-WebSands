@@ -19,8 +19,8 @@ use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
 
-mod common;
-use common::{
+
+use test_common::{
     create_test_config_with_cleanup, cleanup_test_database, create_test_user, generate_test_token,
     test_data::*, http::*, env::with_env_vars, mocks::*
 };
@@ -80,10 +80,10 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_success_as_admin() {
         // BEFORE: 95+ lines of duplicated setup code
         // AFTER: 28 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -94,7 +94,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -140,13 +140,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_with_pagination() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 23 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs?page=2&per_page=25", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -157,7 +157,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -181,13 +181,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_with_level_filter() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs?level=error", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -198,7 +198,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -221,13 +221,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_with_source_filter() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs?source=system", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -238,7 +238,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -261,7 +261,7 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_with_date_range() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 24 lines using UnifiedTestFixture - 68% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let start_date = "2024-01-01T00:00:00Z";
         let end_date = "2024-12-31T23:59:59Z";
@@ -269,7 +269,7 @@ mod admin_logs_retrieval_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -280,7 +280,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -303,13 +303,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_with_search_term() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs?search=login", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -320,7 +320,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -343,14 +343,14 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_per_page_limit() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 23 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Test per_page limit is enforced (max 100)
         let req = create_auth_request("GET", "/api/admin/logs?per_page=150", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -361,7 +361,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -384,13 +384,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_forbidden_as_user() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs", &fixture.test_user_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -401,7 +401,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -421,14 +421,14 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_unauthorized_without_token() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 21 lines using UnifiedTestFixture - 72% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/admin/logs")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -439,7 +439,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -459,13 +459,13 @@ mod admin_logs_retrieval_tests {
     async fn test_get_logs_invalid_token() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs", "invalid.jwt.token")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -476,7 +476,7 @@ mod admin_logs_retrieval_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -501,13 +501,13 @@ mod admin_log_settings_tests {
     async fn test_get_log_settings_success() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 27 lines using UnifiedTestFixture - 68% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs/settings", &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -518,7 +518,7 @@ mod admin_log_settings_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -551,13 +551,13 @@ mod admin_log_settings_tests {
     async fn test_get_log_settings_forbidden_as_user() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 71% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/logs/settings", &fixture.test_user_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -568,7 +568,7 @@ mod admin_log_settings_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -588,14 +588,14 @@ mod admin_log_settings_tests {
     async fn test_get_log_settings_unauthorized_without_token() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 21 lines using UnifiedTestFixture - 72% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/admin/logs/settings")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -606,7 +606,7 @@ mod admin_log_settings_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -631,7 +631,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_success_partial() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 27 lines using UnifiedTestFixture - 68% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(60),
@@ -644,7 +644,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -655,7 +655,7 @@ mod admin_log_settings_update_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -679,7 +679,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_success_complete() {
         // BEFORE: 90+ lines of duplicated setup code
         // AFTER: 30 lines using UnifiedTestFixture - 67% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(90),
@@ -692,7 +692,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -703,7 +703,7 @@ mod admin_log_settings_update_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -731,7 +731,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_invalid_retention_days_too_low() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(0),
@@ -744,7 +744,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -755,7 +755,7 @@ mod admin_log_settings_update_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -778,7 +778,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_invalid_retention_days_too_high() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(400),
@@ -791,7 +791,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -802,7 +802,7 @@ mod admin_log_settings_update_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -825,7 +825,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_invalid_log_level() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: None,
@@ -838,7 +838,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -849,7 +849,7 @@ mod admin_log_settings_update_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                 .service(
                     web::scope("/api/admin")
                         .wrap(admin_auth)
@@ -872,7 +872,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_valid_log_levels() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let valid_levels = vec!["error", "warn", "info", "debug", "trace"];
         
@@ -888,7 +888,7 @@ mod admin_log_settings_update_tests {
                 .to_request();
 
             // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -899,7 +899,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)
@@ -925,7 +925,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_edge_case_retention_days() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Test boundary values
         for days in &[1, 365] {
@@ -940,7 +940,7 @@ mod admin_log_settings_update_tests {
                 .to_request();
 
             // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -951,7 +951,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)
@@ -977,7 +977,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_empty_enabled_sources() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: None,
@@ -990,7 +990,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1001,7 +1001,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)
@@ -1027,7 +1027,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_forbidden_as_user() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(60),
@@ -1040,7 +1040,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1051,7 +1051,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)
@@ -1073,7 +1073,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_unauthorized_without_token() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateLogSettingsRequest {
             retention_days: Some(60),
@@ -1087,7 +1087,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1098,7 +1098,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)
@@ -1120,7 +1120,7 @@ mod admin_log_settings_update_tests {
     async fn test_update_log_settings_malformed_json() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::put()
             .uri("/api/admin/logs/settings")
@@ -1130,7 +1130,7 @@ mod admin_log_settings_update_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1141,7 +1141,7 @@ mod admin_log_settings_update_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
                     .service(
                         web::scope("/api/admin")
                             .wrap(admin_auth)

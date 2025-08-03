@@ -51,6 +51,23 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_random_string_different_lengths() {
+        for len in [1, 5, 20, 50] {
+            let result = generate_random_string(len);
+            assert_eq!(result.len(), len);
+        }
+    }
+
+    #[test]
+    fn test_generate_random_strings_are_different() {
+        let str1 = generate_random_string(20);
+        let str2 = generate_random_string(20);
+        
+        // With high probability, two random strings should be different
+        assert_ne!(str1, str2);
+    }
+
+    #[test]
     fn test_generate_secure_token_format() {
         let token = generate_secure_token();
         // UUID v4 without hyphens is 32 characters long

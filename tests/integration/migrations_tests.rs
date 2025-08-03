@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use oxidizedoasis_websands::infrastructure::database::connection::create_pool;
 use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 
-mod common;
+
 
 // Since migrations module is private, we test the migration functionality
 // through the create_pool function which calls migrations internally
@@ -11,7 +11,7 @@ mod common;
 #[tokio::test]
 async fn test_migrations_through_create_pool_success() {
     // Create a test database config - this will trigger migrations internally
-    let config = common::create_test_app_config();
+    let config = test_common::create_test_app_config();
     
     // create_pool runs migrations internally during setup
     let result = create_pool(&config).await;
@@ -23,7 +23,7 @@ async fn test_migrations_through_create_pool_success() {
 #[tokio::test]
 async fn test_migrations_through_create_pool_with_test_database() {
     // Create a temporary test database
-    let (config, _db_name) = common::create_test_config_with_cleanup()
+    let (config, _db_name) = test_common::create_test_config_with_cleanup()
         .await
         .expect("Failed to create test database");
     
@@ -37,7 +37,7 @@ async fn test_migrations_through_create_pool_with_test_database() {
 #[tokio::test]
 async fn test_migrations_idempotent_through_create_pool() {
     // Test that running create_pool multiple times is idempotent (migrations run multiple times)
-    let config = common::create_test_app_config();
+    let config = test_common::create_test_app_config();
     
     // First pool creation with migrations
     let result1 = create_pool(&config).await;
@@ -51,7 +51,7 @@ async fn test_migrations_idempotent_through_create_pool() {
 #[tokio::test]
 async fn test_create_pool_with_invalid_config() {
     // Create invalid config to test error handling
-    let mut config = common::create_test_app_config();
+    let mut config = test_common::create_test_app_config();
     config.database.url = "postgres://invalid_user:invalid_pass@invalid_host:9999/invalid_db".to_string();
     
     // This should fail to create a pool
@@ -119,7 +119,7 @@ async fn test_migration_sql_files_are_readable() {
 #[tokio::test]
 async fn test_run_migrations_return_type() {
     // Test the function signature and return type
-    let config = common::create_test_app_config();
+    let config = test_common::create_test_app_config();
     let result = create_pool(&config).await;
     
     // Verify the function returns the expected Result type
@@ -139,7 +139,7 @@ async fn test_run_migrations_return_type() {
 #[tokio::test]
 async fn test_create_pool_connection_reuse() {
     // Test that create_pool can be called multiple times safely
-    let config = common::create_test_app_config();
+    let config = test_common::create_test_app_config();
     
     // Create first pool
     let pool1 = create_pool(&config).await

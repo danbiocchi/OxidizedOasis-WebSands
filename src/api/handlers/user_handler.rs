@@ -1674,6 +1674,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_environment_variable_defaults() {
+        // Store original values to restore later
+        let original_host = std::env::var("SERVER_HOST").ok();
+        let original_env = std::env::var("ENVIRONMENT").ok();
+        
         // Test environment variable default handling
         std::env::remove_var("SERVER_HOST");
         std::env::remove_var("ENVIRONMENT");
@@ -1683,6 +1687,14 @@ mod tests {
 
         assert_eq!(default_host, "127.0.0.1");
         assert_eq!(default_env, "development");
+        
+        // Restore original values
+        if let Some(val) = original_host {
+            std::env::set_var("SERVER_HOST", val);
+        }
+        if let Some(val) = original_env {
+            std::env::set_var("ENVIRONMENT", val);
+        }
     }
 
     #[tokio::test]

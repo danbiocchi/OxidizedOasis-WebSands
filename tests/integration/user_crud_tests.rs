@@ -21,8 +21,7 @@ use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use oxidizedoasis_websands::common::error::ApiErrorType;
 
-mod common;
-use common::{
+use test_common::{
     UnifiedTestFixture, create_test_user, create_standard_mock_services,
     test_data::*, http::*, mocks::*
 };
@@ -79,8 +78,8 @@ mod tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo_arc.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -155,8 +154,8 @@ mod tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo_arc.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -223,8 +222,8 @@ mod tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo_arc.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -299,8 +298,8 @@ mod tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo_arc.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -373,8 +372,8 @@ mod tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo_arc.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),

@@ -55,6 +55,7 @@ chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 sqlformat = "=0.2.6"
 predicates = "2.1.1" # For predicates::option::lift_option
+test_common = { path = "tests/common" }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
@@ -64,3 +65,64 @@ members = [
     ".",
     "frontend"
 ]
+
+# Integration tests in subdirectory
+[[test]]
+name = "admin_logs_tests"
+path = "tests/integration/admin_logs_tests.rs"
+
+[[test]]
+name = "admin_security_tests"
+path = "tests/integration/admin_security_tests.rs"
+
+[[test]]
+name = "admin_user_management_tests"
+path = "tests/integration/admin_user_management_tests.rs"
+
+[[test]]
+name = "api_handler_tests"
+path = "tests/integration/api_handler_tests.rs"
+
+[[test]]
+name = "cors_tests"
+path = "tests/integration/cors_tests.rs"
+
+[[test]]
+name = "database_integration_tests"
+path = "tests/integration/database_integration_tests.rs"
+
+[[test]]
+name = "email_service_tests"
+path = "tests/integration/email_service_tests.rs"
+
+[[test]]
+name = "email_templates_tests"
+path = "tests/integration/email_templates_tests.rs"
+
+[[test]]
+name = "health_check_tests"
+path = "tests/integration/health_check_tests.rs"
+
+[[test]]
+name = "lib_tests"
+path = "tests/integration/lib_tests.rs"
+
+[[test]]
+name = "main_integration_tests"
+path = "tests/integration/main_integration_tests.rs"
+
+[[test]]
+name = "middleware_tests"
+path = "tests/integration/middleware_tests.rs"
+
+[[test]]
+name = "migrations_tests"
+path = "tests/integration/migrations_tests.rs"
+
+[[test]]
+name = "user_crud_tests"
+path = "tests/integration/user_crud_tests.rs"
+
+[[test]]
+name = "user_tests"
+path = "tests/integration/user_tests.rs"

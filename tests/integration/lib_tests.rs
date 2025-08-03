@@ -27,7 +27,7 @@ mod lib_module_tests {
         
         // Verify modules are accessible and contain expected submodules
         let _handlers_module = std::any::type_name::<api::handlers::user_handler::UserHandler>();
-        let _error_module = std::any::type_name::<common::error::ApiError>();
+        let _error_module = std::any::type_name::<oxidizedoasis_websands::common::error::ApiError>();
         let _user_module = std::any::type_name::<core::user::User>();
         let _config_module = std::any::type_name::<infrastructure::config::AppConfig>();
         
@@ -94,7 +94,7 @@ mod lib_module_tests {
         // Verify no compilation errors occur when using lib.rs exports
         let module_names = vec![
             std::any::type_name::<api::handlers::user_handler::UserHandler>(),
-            std::any::type_name::<common::error::ApiError>(),
+            std::any::type_name::<oxidizedoasis_websands::common::error::ApiError>(),
             std::any::type_name::<core::user::User>(),
             std::any::type_name::<infrastructure::config::AppConfig>(),
         ];
@@ -327,7 +327,7 @@ mod module_accessibility_tests {
         
         // These should compile without errors, proving the modules are public
         let _api_module = std::any::type_name::<api::handlers::user_handler::UserHandler>();
-        let _common_module = std::any::type_name::<common::error::ApiError>();
+        let _common_module = std::any::type_name::<oxidizedoasis_websands::common::error::ApiError>();
         let _core_module = std::any::type_name::<core::user::User>();
         let _infra_module = std::any::type_name::<infrastructure::config::AppConfig>();
     }

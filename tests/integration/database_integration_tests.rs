@@ -1,14 +1,14 @@
-use crate::common::{
+use test_common::{
     create_test_db_pool, create_test_new_user,
 };
-use crate::common::database::DatabaseTestHelper;
+use test_common::database::DatabaseTestHelper;
 use chrono::{Duration, Utc};
 use oxidizedoasis_websands::core::user::{User, NewUser};
 use sqlx::{Pool, Postgres, Row};
 use std::sync::Arc;
 use uuid::Uuid;
 
-mod common;
+
 
 const TEST_EMAIL: &str = "test@example.com";
 const TEST_USERNAME: &str = "testuser";

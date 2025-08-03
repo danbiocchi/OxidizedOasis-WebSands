@@ -486,12 +486,8 @@ mod tests {
         assert!(claims.iat <= now + 2 && claims.iat >= now - 2, "iat mismatch"); 
         assert!(claims.nbf <= now + 2 && claims.nbf >= now - 2, "nbf mismatch"); 
 
-        let configured_minutes = env::var("JWT_ACCESS_TOKEN_EXPIRATION_MINUTES")
-            .unwrap_or_else(|_| "1".to_string()) // Use 1 minute as set by setup_test_environment
-            .parse::<i64>()
-            .unwrap_or(1);
-
-        let expected_duration_seconds = Duration::minutes(configured_minutes).num_seconds();
+        // The expected duration should be exactly 1 minute (60 seconds) since we set it above
+        let expected_duration_seconds = 60;
         let actual_duration_seconds = claims.exp - claims.iat;
 
         const DURATION_LEEWAY: i64 = 10; // Allow 10 seconds leeway for duration
@@ -499,8 +495,8 @@ mod tests {
         assert!(
             actual_duration_seconds >= expected_duration_seconds - DURATION_LEEWAY &&
             actual_duration_seconds <= expected_duration_seconds + DURATION_LEEWAY,
-            "Access token duration mismatch. Expected duration: {}s ({} mins), Actual duration: {}s. iat: {}, exp: {}, now: {}",
-            expected_duration_seconds, configured_minutes, actual_duration_seconds, claims.iat, claims.exp, now
+            "Access token duration mismatch. Expected duration: {}s (1 min), Actual duration: {}s. iat: {}, exp: {}, now: {}",
+            expected_duration_seconds, actual_duration_seconds, claims.iat, claims.exp, now
         );
         assert_eq!(metadata.expires_at, timestamp_to_datetime(claims.exp));
         

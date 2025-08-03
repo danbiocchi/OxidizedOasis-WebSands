@@ -15,8 +15,8 @@ use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
 
-mod common;
-use common::{
+
+use test_common::{
     test_data::*, http::*, mocks::*, create_test_user,
     EnhancedTestConfig, assert_user_response, assert_error_response, assert_user_in_database,
     seed_admin_test_data, UserManagementScenario, generate_test_token
@@ -46,13 +46,13 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_success_as_admin() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -60,8 +60,8 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
@@ -87,13 +87,13 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", &fixture.test_user_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -101,8 +101,8 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
@@ -122,14 +122,14 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_unauthorized_without_token() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/admin/users")
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -137,8 +137,8 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
@@ -158,13 +158,13 @@ mod admin_user_list_tests {
 
     #[actix_rt::test]
     async fn test_list_users_invalid_token() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/admin/users", "invalid.jwt.token")
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -172,8 +172,8 @@ mod admin_user_list_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(auth_service.clone()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
@@ -198,10 +198,10 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Create database helper and insert real users instead of using mocks
-        let db_helper = common::database::DatabaseTestHelper::from_config(&fixture.config).await
+        let db_helper = test_common::database::DatabaseTestHelper::from_config(&fixture.config).await
             .expect("Failed to create database helper");
         
         // Clean up any existing test data
@@ -246,8 +246,8 @@ mod admin_user_detail_tests {
 
         let auth_service = Arc::new(AuthService::new(
             user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -270,8 +270,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -301,7 +301,7 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_not_found() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         println!("[DEBUG] test_get_user_not_found: Starting test");
@@ -310,7 +310,7 @@ mod admin_user_detail_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -318,8 +318,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -359,13 +359,13 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_user_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -373,8 +373,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -393,14 +393,14 @@ mod admin_user_detail_tests {
 
     #[actix_rt::test]
     async fn test_get_user_invalid_uuid() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         println!("[DEBUG] test_get_user_invalid_uuid: Starting test");
         let req = create_auth_request("GET", "/api/admin/users/invalid-uuid", &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -408,8 +408,8 @@ mod admin_user_detail_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -443,7 +443,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "admin".to_string(),
@@ -454,7 +454,7 @@ mod admin_user_role_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -462,8 +462,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -487,7 +487,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_invalid_role() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "invalid_role".to_string(),
@@ -498,7 +498,7 @@ mod admin_user_role_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -506,8 +506,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -530,7 +530,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_self_edit_forbidden() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "user".to_string(),
@@ -541,7 +541,7 @@ mod admin_user_role_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -549,8 +549,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -573,7 +573,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_not_found() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateRoleRequest {
@@ -585,7 +585,7 @@ mod admin_user_role_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -593,8 +593,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -617,7 +617,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateRoleRequest {
             role: "admin".to_string(),
@@ -628,7 +628,7 @@ mod admin_user_role_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -636,8 +636,8 @@ mod admin_user_role_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -656,7 +656,7 @@ mod admin_user_role_tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_valid_roles() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Test both valid roles
         for role in &["user", "admin"] {
@@ -669,7 +669,7 @@ mod admin_user_role_tests {
                 .to_request();
 
             // Create standard mock services
-            let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+            let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -677,8 +677,8 @@ mod admin_user_role_tests {
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
-                    .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                    .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                    .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                    .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                     .app_data(web::Data::new(auth_service.clone()))
                     .app_data(web::Data::new(admin_user_repo))
                     .service(
@@ -708,10 +708,10 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         // Create database helper and insert real users instead of using mocks
-        let db_helper = common::database::DatabaseTestHelper::from_config(&fixture.config).await
+        let db_helper = test_common::database::DatabaseTestHelper::from_config(&fixture.config).await
             .expect("Failed to create database helper");
         
         // Clean up any existing test data
@@ -761,8 +761,8 @@ mod admin_user_username_tests {
 
         let auth_service = Arc::new(AuthService::new(
             user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -785,8 +785,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -814,7 +814,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_empty() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "".to_string(),
@@ -825,7 +825,7 @@ mod admin_user_username_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -833,8 +833,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -857,7 +857,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_whitespace_only() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "   ".to_string(),
@@ -868,7 +868,7 @@ mod admin_user_username_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -876,8 +876,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -899,7 +899,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_self_edit_forbidden() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "newadminname".to_string(),
@@ -910,7 +910,7 @@ mod admin_user_username_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -918,8 +918,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -942,7 +942,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_not_found() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateUsernameRequest {
@@ -954,7 +954,7 @@ mod admin_user_username_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -962,8 +962,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -986,7 +986,7 @@ mod admin_user_username_tests {
 
     #[actix_rt::test]
     async fn test_update_user_username_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateUsernameRequest {
             username: "hackerusername".to_string(),
@@ -997,7 +997,7 @@ mod admin_user_username_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1005,8 +1005,8 @@ mod admin_user_username_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1030,7 +1030,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_activate_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: true,
@@ -1041,7 +1041,7 @@ mod admin_user_status_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1049,8 +1049,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1074,7 +1074,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_deactivate_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -1085,7 +1085,7 @@ mod admin_user_status_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1093,8 +1093,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1118,7 +1118,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_self_edit_forbidden() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -1129,7 +1129,7 @@ mod admin_user_status_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1137,8 +1137,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1161,7 +1161,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_not_found() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let update_data = UpdateStatusRequest {
@@ -1173,7 +1173,7 @@ mod admin_user_status_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1181,8 +1181,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1205,7 +1205,7 @@ mod admin_user_status_tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let update_data = UpdateStatusRequest {
             is_active: false,
@@ -1216,7 +1216,7 @@ mod admin_user_status_tests {
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1224,8 +1224,8 @@ mod admin_user_status_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1249,13 +1249,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_success() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1263,8 +1263,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1287,13 +1287,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_self_delete_forbidden() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_admin_id), &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1301,8 +1301,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1325,14 +1325,14 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_not_found() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         let non_existent_id = Uuid::new_v4();
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", non_existent_id), &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1340,8 +1340,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1364,13 +1364,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_forbidden_as_user() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", &format!("/api/admin/users/{}", fixture.test_target_user_id), &fixture.test_user_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1378,8 +1378,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1398,14 +1398,14 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_unauthorized_without_token() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::delete()
             .uri(&format!("/api/admin/users/{}", fixture.test_target_user_id))
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1413,8 +1413,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1433,13 +1433,13 @@ mod admin_user_delete_tests {
 
     #[actix_rt::test]
     async fn test_delete_user_invalid_uuid() {
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("DELETE", "/api/admin/users/invalid-uuid", &fixture.test_admin_token)
             .to_request();
 
         // Create standard mock services
-        let (auth_service, user_handler, admin_user_repo) = common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
+        let (auth_service, user_handler, admin_user_repo) = test_common::create_standard_mock_services_with_repo(fixture.test_user_id, fixture.test_admin_id, fixture.test_target_user_id).await;
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
@@ -1447,8 +1447,8 @@ mod admin_user_delete_tests {
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
-                .app_data(web::Data::new(Arc::new(common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
-                .app_data(web::Data::new(common::mocks::create_mock_active_token_service()))
+                .app_data(web::Data::new(Arc::new(test_common::mocks::create_mock_token_revocation_service()) as Arc<dyn oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait>))
+                .app_data(web::Data::new(test_common::mocks::create_mock_active_token_service()))
                 .app_data(web::Data::new(admin_user_repo))
                 .service(
                     web::scope("/api/admin/users")
@@ -1500,8 +1500,8 @@ mod enhanced_integration_tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -1584,8 +1584,8 @@ mod enhanced_integration_tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -1656,8 +1656,8 @@ mod enhanced_integration_tests {
         
         let auth_service = Arc::new(AuthService::new(
             user_repo.clone(),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),

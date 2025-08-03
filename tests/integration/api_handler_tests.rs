@@ -16,8 +16,7 @@ use oxidizedoasis_websands::api::handlers::user_handler::{
 use oxidizedoasis_websands::core::auth::{AuthService};
 use oxidizedoasis_websands::infrastructure::middleware::auth::jwt_auth_validator;
 
-mod common;
-use common::{
+use test_common::{
     create_test_app_config, create_test_user, generate_test_token,
     test_data::*, http::*, mocks::*
 };
@@ -176,8 +175,8 @@ impl ApiTestFixture {
 
         let auth_service = Arc::new(AuthService::new(
             Arc::new(auth_user_repo),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -225,7 +224,7 @@ mod user_registration_tests {
     async fn test_user_registration_success() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 25 lines using UnifiedTestFixture - 67% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let register_data = RegisterRequest {
             username: "newuser".to_string(),
@@ -240,7 +239,7 @@ mod user_registration_tests {
             .to_request();
 
         // Use the new standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -286,7 +285,7 @@ mod user_registration_tests {
     async fn test_user_registration_invalid_email() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 25 lines using UnifiedTestFixture - 70% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let register_data = RegisterRequest {
             username: "testuser".to_string(),
@@ -301,7 +300,7 @@ mod user_registration_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -343,7 +342,7 @@ mod user_registration_tests {
     async fn test_user_registration_weak_password() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 25 lines using UnifiedTestFixture - 70% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let register_data = RegisterRequest {
             username: "testuser".to_string(),
@@ -358,7 +357,7 @@ mod user_registration_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -400,7 +399,7 @@ mod user_registration_tests {
     async fn test_user_registration_password_mismatch() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 25 lines using UnifiedTestFixture - 70% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let register_data = RegisterRequest {
             username: "testuser".to_string(),
@@ -415,7 +414,7 @@ mod user_registration_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -461,7 +460,7 @@ mod user_authentication_tests {
     #[actix_rt::test]
     async fn test_user_login_success() {
         // Use real database integration test instead of mocks
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -507,8 +506,8 @@ mod user_authentication_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -562,7 +561,7 @@ mod user_authentication_tests {
     async fn test_user_login_invalid_credentials() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 22 lines using UnifiedTestFixture - 74% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let login_data = LoginRequest {
             username: TEST_USER_USERNAME.to_string(),
@@ -575,7 +574,7 @@ mod user_authentication_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -617,7 +616,7 @@ mod user_authentication_tests {
     async fn test_user_login_nonexistent_user() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 21 lines using UnifiedTestFixture - 75% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let login_data = LoginRequest {
             username: "nonexistentuser".to_string(),
@@ -630,7 +629,7 @@ mod user_authentication_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -670,7 +669,7 @@ mod user_authentication_tests {
     #[actix_rt::test]
     async fn test_get_current_user_success() {
         // Use real database integration test instead of mocks
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -692,7 +691,7 @@ mod user_authentication_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token for the test user
-        let token = common::generate_test_token(fixture.test_user_id, "user", 3600)
+        let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
 
         let req = create_auth_request("GET", "/api/users/me", &token)
@@ -713,8 +712,8 @@ mod user_authentication_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -753,13 +752,13 @@ mod user_authentication_tests {
     async fn test_get_current_user_invalid_token() {
         // BEFORE: 80+ lines of duplicated setup code
         // AFTER: 19 lines using UnifiedTestFixture - 76% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = create_auth_request("GET", "/api/users/me", "invalid.jwt.token")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -787,14 +786,14 @@ mod user_authentication_tests {
     async fn test_get_current_user_missing_token() {
         // BEFORE: 75+ lines of duplicated setup code
         // AFTER: 18 lines using UnifiedTestFixture - 76% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/api/users/me")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -824,7 +823,7 @@ mod password_reset_tests {
     async fn test_request_password_reset_success() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 23 lines using UnifiedTestFixture - 73% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let reset_data = PasswordResetRequest {
             email: TEST_USER_EMAIL.to_string(),
@@ -836,7 +835,7 @@ mod password_reset_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -878,7 +877,7 @@ mod password_reset_tests {
     async fn test_request_password_reset_nonexistent_email() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 24 lines using UnifiedTestFixture - 72% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let reset_data = PasswordResetRequest {
             email: "nonexistent@example.com".to_string(),
@@ -890,7 +889,7 @@ mod password_reset_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -931,7 +930,7 @@ mod password_reset_tests {
     #[actix_rt::test]
     async fn test_reset_password_success() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -993,8 +992,8 @@ mod password_reset_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1044,7 +1043,7 @@ mod password_reset_tests {
     async fn test_reset_password_password_mismatch() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let reset_data = json!({
             "token": "valid_reset_token",
@@ -1058,7 +1057,7 @@ mod password_reset_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1104,7 +1103,7 @@ mod user_management_tests {
     #[actix_rt::test]
     async fn test_update_user_success() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -1126,7 +1125,7 @@ mod user_management_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token for the test user
-        let token = common::generate_test_token(fixture.test_user_id, "user", 3600)
+        let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
         
         let update_data = json!({
@@ -1153,8 +1152,8 @@ mod user_management_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1191,7 +1190,7 @@ mod user_management_tests {
     #[actix_rt::test]
     async fn test_update_user_unauthorized_other_user() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         let other_user_id = Uuid::new_v4();
         
         // Create test user in database
@@ -1214,7 +1213,7 @@ mod user_management_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token for the test user
-        let token = common::generate_test_token(fixture.test_user_id, "user", 3600)
+        let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
         
         let update_data = json!({
@@ -1240,8 +1239,8 @@ mod user_management_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1278,7 +1277,7 @@ mod user_management_tests {
     #[actix_rt::test]
     async fn test_delete_user_success() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -1300,7 +1299,7 @@ mod user_management_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token for the test user
-        let token = common::generate_test_token(fixture.test_user_id, "user", 3600)
+        let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
 
         let req = create_auth_request("DELETE", &format!("/api/users/{}", fixture.test_user_id), &token)
@@ -1321,8 +1320,8 @@ mod user_management_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1359,7 +1358,7 @@ mod user_management_tests {
     #[actix_rt::test]
     async fn test_delete_user_unauthorized_other_user() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         let other_user_id = Uuid::new_v4();
         
         // Create test user in database
@@ -1382,7 +1381,7 @@ mod user_management_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token for the test user
-        let token = common::generate_test_token(fixture.test_user_id, "user", 3600)
+        let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
         
         let req = create_auth_request("DELETE", &format!("/api/users/{}", other_user_id), &token)
@@ -1403,8 +1402,8 @@ mod user_management_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1445,7 +1444,7 @@ mod token_management_tests {
     #[actix_rt::test]
     async fn test_refresh_token_success() {
         // Use real database integration to avoid mock/real database mismatch
-        let fixture = common::UnifiedTestFixture::new_with_database().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_database().await;
         
         // Create test user in database
         let test_user_password = "TestPassword123!";
@@ -1467,7 +1466,7 @@ mod token_management_tests {
         .expect("Failed to create test user");
 
         // Generate a valid JWT token pair for the test user - use refresh token for refresh endpoint
-        let (access_token, refresh_token) = common::generate_test_token_pair(fixture.test_user_id, "user")
+        let (access_token, refresh_token) = test_common::generate_test_token_pair(fixture.test_user_id, "user")
             .expect("Failed to generate test token pair");
         
         let refresh_data = json!({
@@ -1494,8 +1493,8 @@ mod token_management_tests {
             email_service.clone(),
             Arc::new(oxidizedoasis_websands::core::auth::AuthService::new(
                 Arc::new(oxidizedoasis_websands::core::user::UserRepository::new(fixture.db_pool.clone())),
-                common::TEST_JWT_SECRET.to_string(),
-                common::TEST_AUDIENCE.to_string(),
+                test_common::TEST_JWT_SECRET.to_string(),
+                test_common::TEST_AUDIENCE.to_string(),
                 token_revocation_service.clone(),
                 active_token_service.clone(),
                 email_service.clone(),
@@ -1545,7 +1544,7 @@ mod token_management_tests {
     async fn test_refresh_token_invalid() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 24 lines using UnifiedTestFixture - 72% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let refresh_data = json!({
             "token": "invalid_refresh_token"
@@ -1557,7 +1556,7 @@ mod token_management_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1599,7 +1598,7 @@ mod token_management_tests {
     async fn test_logout_success() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 26 lines using UnifiedTestFixture - 69% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let logout_data = json!({
             "token": "valid_refresh_token"
@@ -1610,7 +1609,7 @@ mod token_management_tests {
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1689,8 +1688,8 @@ mod error_handling_tests {
 
         let auth_service = Arc::new(AuthService::new(
             Arc::new(user_repo),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -1773,8 +1772,8 @@ mod error_handling_tests {
 
         let auth_service = Arc::new(AuthService::new(
             Arc::new(user_repo),
-            common::TEST_JWT_SECRET.to_string(),
-            common::TEST_AUDIENCE.to_string(),
+            test_common::TEST_JWT_SECRET.to_string(),
+            test_common::TEST_AUDIENCE.to_string(),
             token_revocation_service.clone(),
             active_token_service.clone(),
             email_service.clone(),
@@ -1822,14 +1821,14 @@ mod error_handling_tests {
     async fn test_route_not_found() {
         // BEFORE: 80+ lines of duplicated setup code
         // AFTER: 24 lines using UnifiedTestFixture - 70% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::get()
             .uri("/nonexistent/route")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
@@ -1867,14 +1866,14 @@ mod error_handling_tests {
     async fn test_method_not_allowed() {
         // BEFORE: 85+ lines of duplicated setup code
         // AFTER: 27 lines using UnifiedTestFixture - 68% code reduction!
-        let fixture = common::UnifiedTestFixture::new_with_mocks().await;
+        let fixture = test_common::UnifiedTestFixture::new_with_mocks().await;
         
         let req = test::TestRequest::patch()
             .uri("/users/register")
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
-        let (auth_service, user_handler, _token_revocation_service) = common::create_standard_mock_services(
+        let (auth_service, user_handler, _token_revocation_service) = test_common::create_standard_mock_services(
             fixture.test_user_id,
             fixture.test_admin_id
         ).await;
