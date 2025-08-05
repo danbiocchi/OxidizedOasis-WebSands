@@ -161,12 +161,32 @@ async fn test_something_with_db() {
 - **Scope**: API endpoints, middleware, and component interactions
 - **Database**: Uses real database connections with test isolation
 - **Authentication**: Tests with actual JWT tokens and middleware
-- **Coverage**: 244 tests across 15 test files
+- **Coverage**: 244 tests across 14 test files
+- **Naming Convention**: Integration test files follow the pattern `<source_file>_tests.rs` where `<source_file>` corresponds to the main source file being tested (e.g., `middleware.rs` → `middleware_tests.rs`)
 
 ### Test Execution Results
 - **Unit Tests**: 302 passed, 4 ignored (database connection tests)
 - **Integration Tests**: 244 passed across all test files
 - **Total**: 546 tests with 100% pass rate
+
+## Test File Naming Conventions
+
+### Integration Tests
+Integration test files follow a consistent naming pattern based on the source files they test:
+
+- **Pattern**: `<source_file>_tests.rs`
+- **Examples**:
+  - `src/infrastructure/middleware/mod.rs` → `tests/integration/middleware_tests.rs`
+  - `src/api/handlers/user_handler.rs` → `tests/integration/user_handler_tests.rs`
+  - `src/core/email/service.rs` → `tests/integration/email_service_tests.rs`
+
+This naming convention ensures:
+- Clear mapping between source files and their tests
+- Consistent organization across the test suite
+- Easy identification of test coverage gaps
+
+### Unit Tests
+Unit tests are co-located with source code using `#[cfg(test)]` modules within the same file as the code being tested.
 
 ## Best Practices
 
@@ -174,6 +194,7 @@ async fn test_something_with_db() {
 - Group related tests in the same file using modules
 - Use descriptive test names that explain the scenario
 - Organize tests by functionality (authentication, user management, admin, etc.)
+- Follow the naming convention for integration tests: `<source_file>_tests.rs`
 
 ### 2. Database Testing
 - Always use isolated test databases

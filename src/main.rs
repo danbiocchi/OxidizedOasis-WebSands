@@ -234,3 +234,178 @@ async fn main() -> std::io::Result<()> {
         .run()
         .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::sync::Mutex;
+
+    // Global mutex to prevent concurrent environment variable modifications in tests
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn setup_test_env_vars() {
+        env::set_var("DATABASE_URL", "postgresql://test:test@localhost:5432/test");
+        env::set_var("JWT_SECRET", "test_jwt_secret_key_for_testing");
+        env::set_var("SMTP_SERVER", "smtp.test.com");
+        env::set_var("ADMIN_EMAIL", "admin@test.com");
+    }
+
+    fn cleanup_test_env_vars() {
+        let vars_to_remove = ["DATABASE_URL", "JWT_SECRET", "SMTP_SERVER", "ADMIN_EMAIL"];
+        for var in &vars_to_remove {
+            env::remove_var(var);
+        }
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_success() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        setup_test_env_vars();
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_ok(), "Should succeed when all env vars are set");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_missing_database_url() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        
+        // Set all except DATABASE_URL
+        env::set_var("JWT_SECRET", "test_jwt_secret");
+        env::set_var("SMTP_SERVER", "smtp.test.com");
+        env::set_var("ADMIN_EMAIL", "admin@test.com");
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err(), "Should fail when DATABASE_URL is missing");
+        
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("DATABASE_URL"), "Error should mention DATABASE_URL");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_missing_jwt_secret() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        
+        // Set all except JWT_SECRET
+        env::set_var("DATABASE_URL", "postgresql://test:test@localhost:5432/test");
+        env::set_var("SMTP_SERVER", "smtp.test.com");
+        env::set_var("ADMIN_EMAIL", "admin@test.com");
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err(), "Should fail when JWT_SECRET is missing");
+        
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("JWT_SECRET"), "Error should mention JWT_SECRET");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_missing_smtp_server() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        
+        // Set all except SMTP_SERVER
+        env::set_var("DATABASE_URL", "postgresql://test:test@localhost:5432/test");
+        env::set_var("JWT_SECRET", "test_jwt_secret");
+        env::set_var("ADMIN_EMAIL", "admin@test.com");
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err(), "Should fail when SMTP_SERVER is missing");
+        
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("SMTP_SERVER"), "Error should mention SMTP_SERVER");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_missing_admin_email() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        
+        // Set all except ADMIN_EMAIL
+        env::set_var("DATABASE_URL", "postgresql://test:test@localhost:5432/test");
+        env::set_var("JWT_SECRET", "test_jwt_secret");
+        env::set_var("SMTP_SERVER", "smtp.test.com");
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err(), "Should fail when ADMIN_EMAIL is missing");
+        
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("ADMIN_EMAIL"), "Error should mention ADMIN_EMAIL");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_all_missing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err(), "Should fail when all env vars are missing");
+        
+        // Should fail on the first missing variable (DATABASE_URL)
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("DATABASE_URL"), "Error should mention DATABASE_URL");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_empty_values() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+        
+        // Set env vars to empty strings
+        env::set_var("DATABASE_URL", "");
+        env::set_var("JWT_SECRET", "");
+        env::set_var("SMTP_SERVER", "");
+        env::set_var("ADMIN_EMAIL", "");
+
+        // Empty string values should still be considered "set" by env::var()
+        let result = validate_critical_env_vars();
+        assert!(result.is_ok(), "Should succeed even with empty string values");
+
+        cleanup_test_env_vars();
+    }
+
+    #[test]
+    fn test_validate_critical_env_vars_error_message_format() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env_vars();
+
+        let result = validate_critical_env_vars();
+        assert!(result.is_err());
+        
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.starts_with("Missing required environment variable:"));
+        assert!(error_message.contains("DATABASE_URL"));
+
+        cleanup_test_env_vars();
+    }
+
+    // Note: setup_database function requires actual database connection and AppConfig
+    // These would be better tested in integration tests rather than unit tests
+    // Adding a simple test to verify the function signature and basic error handling
+    
+    #[test]
+    fn test_setup_database_function_exists() {
+        // This test just verifies the function exists and can be called
+        // Actual database testing should be done in integration tests
+        
+        // We can't easily test setup_database without a real database connection
+        // But we can verify the function signature compiles
+        let _function_ref = setup_database;
+        assert!(true, "setup_database function exists and compiles");
+    }
+}

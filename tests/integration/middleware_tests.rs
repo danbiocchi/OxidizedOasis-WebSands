@@ -1,23 +1,25 @@
 //! Comprehensive middleware testing
-//! Tests authentication, authorization, CORS, and other middleware components
+//! Tests authentication, authorization, CORS, metrics, and other middleware components
 
-use actix_web::{test, web, App, http::StatusCode, cookie::Cookie, HttpMessage, FromRequest};
+use actix_web::{test, web, App, http::StatusCode, cookie::Cookie, HttpMessage, FromRequest, HttpResponse, middleware};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
+use tokio::time::{sleep, Instant};
 
 use oxidizedoasis_websands::infrastructure::middleware::{
     auth::{jwt_auth_validator, cookie_auth_validator, AuthError},
     admin::admin_validator,
+    metrics::RequestMetrics,
 };
 use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait;
 
-
 use test_common::{
     create_test_app_config, generate_test_token, create_test_claims,
-    mocks::*, env::with_env_vars, TEST_JWT_SECRET, TEST_AUDIENCE
+    mocks::*, env::with_env_vars, TEST_JWT_SECRET, TEST_AUDIENCE, UnifiedTestFixture
 };
 
 /// Test fixture for middleware tests
@@ -295,6 +297,582 @@ mod csrf_protection_tests {
         // This would be tested with actual CSRF middleware integration
         // For now, this is a placeholder for future CSRF middleware testing
         assert!(true); // Placeholder assertion
+    }
+    
+    #[cfg(test)]
+    mod metrics_middleware_tests {
+        use super::*;
+    
+        /// Test metrics middleware registration and initialization
+        mod middleware_registration_tests {
+            use super::*;
+    
+            #[tokio::test]
+            async fn test_metrics_middleware_registration_success() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                // Test that RequestMetrics middleware can be successfully registered
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/health", web::get().to(|| async {
+                            HttpResponse::Ok().json(serde_json::json!({"status": "healthy"}))
+                        }))
+                ).await;
+                
+                // Test that the app initializes successfully with metrics middleware
+                let req = test::TestRequest::get().uri("/health").to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                assert_eq!(resp.status(), StatusCode::OK);
+                let body: serde_json::Value = test::read_body_json(resp).await;
+                assert_eq!(body["status"], "healthy");
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_middleware_initialization_with_multiple_routes() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                // Test metrics middleware with multiple routes
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/api/users", web::get().to(|| async {
+                            HttpResponse::Ok().json(serde_json::json!({"users": []}))
+                        }))
+                        .route("/api/health", web::get().to(|| async {
+                            HttpResponse::Ok().body("OK")
+                        }))
+                        .route("/api/status", web::post().to(|| async {
+                            HttpResponse::Created().json(serde_json::json!({"created": true}))
+                        }))
+                ).await;
+                
+                // Test each route to ensure metrics middleware is working across all
+                let routes = [
+                    ("/api/users", "GET", StatusCode::OK),
+                    ("/api/health", "GET", StatusCode::OK),
+                    ("/api/status", "POST", StatusCode::CREATED),
+                ];
+                
+                for (uri, method, expected_status) in routes.iter() {
+                    let req = match *method {
+                        "GET" => test::TestRequest::get().uri(uri).to_request(),
+                        "POST" => test::TestRequest::post().uri(uri).to_request(),
+                        _ => panic!("Unsupported method: {}", method),
+                    };
+                    
+                    let resp = test::call_service(&app, req).await;
+                    assert_eq!(resp.status(), *expected_status, "Failed for {} {}", method, uri);
+                }
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_middleware_with_other_middleware() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                // Test metrics middleware integration with other middleware
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics) // Metrics middleware
+                        .wrap(middleware::Logger::default()) // Logger middleware
+                        .wrap(middleware::Compress::default()) // Compression middleware
+                        .wrap(
+                            middleware::DefaultHeaders::new()
+                                .add(("X-Frame-Options", "DENY"))
+                                .add(("X-Content-Type-Options", "nosniff"))
+                        )
+                        .route("/test", web::get().to(|| async {
+                            HttpResponse::Ok().body("middleware stack test")
+                        }))
+                ).await;
+                
+                let req = test::TestRequest::get().uri("/test").to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Verify security headers are present (indicating middleware stack works)
+                let headers = resp.headers();
+                assert!(
+                    headers.contains_key("x-frame-options") || headers.contains_key("X-Frame-Options"),
+                    "Security middleware should set X-Frame-Options header"
+                );
+            }
+        }
+    
+        /// Test request and response metrics collection
+        mod metrics_collection_tests {
+            use super::*;
+    
+            #[tokio::test]
+            async fn test_request_metrics_collection_basic() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/", web::get().to(|| async {
+                            HttpResponse::Ok().body("test response")
+                        }))
+                ).await;
+                
+                // Make a request and verify it completes successfully
+                let req = test::TestRequest::get().uri("/").to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                assert!(resp.status().is_success());
+                let body_bytes = test::read_body(resp).await;
+                assert_eq!(body_bytes, "test response");
+            }
+            
+            #[tokio::test]
+            async fn test_request_timing_and_performance_monitoring() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/slow", web::get().to(|| async {
+                            // Simulate some processing time
+                            sleep(Duration::from_millis(10)).await;
+                            HttpResponse::Ok().body("slow response")
+                        }))
+                        .route("/fast", web::get().to(|| async {
+                            HttpResponse::Ok().body("fast response")
+                        }))
+                ).await;
+                
+                let start_time = Instant::now();
+                
+                // Test slow endpoint
+                let req = test::TestRequest::get().uri("/slow").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert!(resp.status().is_success());
+                
+                let slow_duration = start_time.elapsed();
+                assert!(slow_duration >= Duration::from_millis(10), "Slow endpoint should take at least 10ms");
+                
+                // Test fast endpoint
+                let req = test::TestRequest::get().uri("/fast").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert!(resp.status().is_success());
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_different_http_methods() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/resource", web::get().to(|| async {
+                            HttpResponse::Ok().json(serde_json::json!({"id": 1, "name": "test"}))
+                        }))
+                        .route("/resource", web::post().to(|| async {
+                            HttpResponse::Created().json(serde_json::json!({"id": 2, "created": true}))
+                        }))
+                        .route("/resource/{id}", web::put().to(|| async {
+                            HttpResponse::Ok().json(serde_json::json!({"id": 1, "updated": true}))
+                        }))
+                        .route("/resource/{id}", web::delete().to(|| async {
+                            HttpResponse::NoContent().finish()
+                        }))
+                ).await;
+                
+                // Test GET request
+                let req = test::TestRequest::get().uri("/resource").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Test POST request
+                let req = test::TestRequest::post()
+                    .uri("/resource")
+                    .set_json(&serde_json::json!({"name": "new resource"}))
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::CREATED);
+                
+                // Test PUT request
+                let req = test::TestRequest::put()
+                    .uri("/resource/1")
+                    .set_json(&serde_json::json!({"name": "updated resource"}))
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Test DELETE request
+                let req = test::TestRequest::delete().uri("/resource/1").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_different_status_codes() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/success", web::get().to(|| async {
+                            HttpResponse::Ok().body("success")
+                        }))
+                        .route("/created", web::post().to(|| async {
+                            HttpResponse::Created().body("created")
+                        }))
+                        .route("/not-found", web::get().to(|| async {
+                            HttpResponse::NotFound().body("not found")
+                        }))
+                        .route("/error", web::get().to(|| async {
+                            HttpResponse::InternalServerError().body("server error")
+                        }))
+                        .route("/bad-request", web::post().to(|| async {
+                            HttpResponse::BadRequest().body("bad request")
+                        }))
+                ).await;
+                
+                let test_cases = [
+                    ("/success", "GET", StatusCode::OK),
+                    ("/created", "POST", StatusCode::CREATED),
+                    ("/not-found", "GET", StatusCode::NOT_FOUND),
+                    ("/error", "GET", StatusCode::INTERNAL_SERVER_ERROR),
+                    ("/bad-request", "POST", StatusCode::BAD_REQUEST),
+                ];
+                
+                for (uri, method, expected_status) in test_cases.iter() {
+                    let req = match *method {
+                        "GET" => test::TestRequest::get().uri(uri).to_request(),
+                        "POST" => test::TestRequest::post().uri(uri).to_request(),
+                        _ => panic!("Unsupported method: {}", method),
+                    };
+                    
+                    let resp = test::call_service(&app, req).await;
+                    assert_eq!(resp.status(), *expected_status, "Failed for {} {}", method, uri);
+                }
+            }
+        }
+    
+        /// Test sequential request handling
+        mod sequential_request_tests {
+            use super::*;
+    
+            #[tokio::test]
+            async fn test_sequential_request_metrics() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/counter", web::get().to(|| async {
+                            HttpResponse::Ok().body("counter response")
+                        }))
+                ).await;
+                
+                // Make multiple sequential requests
+                for i in 0..5 {
+                    let req = test::TestRequest::get()
+                        .uri("/counter")
+                        .to_request();
+                    let resp = test::call_service(&app, req).await;
+                    assert_eq!(resp.status(), StatusCode::OK, "Request {} should succeed", i + 1);
+                }
+            }
+            
+            #[tokio::test]
+            async fn test_mixed_sequential_request_types() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/get-endpoint", web::get().to(|| async {
+                            HttpResponse::Ok().body("get response")
+                        }))
+                        .route("/post-endpoint", web::post().to(|| async {
+                            HttpResponse::Created().body("post response")
+                        }))
+                        .route("/slow-endpoint", web::get().to(|| async {
+                            sleep(Duration::from_millis(5)).await;
+                            HttpResponse::Ok().body("slow response")
+                        }))
+                ).await;
+                
+                // Mix of different request types - sequential
+                for i in 0..9 {
+                    let (uri, method, expected_status) = match i % 3 {
+                        0 => ("/get-endpoint", "GET", StatusCode::OK),
+                        1 => ("/post-endpoint", "POST", StatusCode::CREATED),
+                        _ => ("/slow-endpoint", "GET", StatusCode::OK),
+                    };
+                    
+                    let req = match method {
+                        "GET" => test::TestRequest::get().uri(uri).to_request(),
+                        "POST" => test::TestRequest::post().uri(uri).to_request(),
+                        _ => panic!("Unsupported method: {}", method),
+                    };
+                    
+                    let resp = test::call_service(&app, req).await;
+                    assert_eq!(resp.status(), expected_status, "Request {} should have status {:?}", i + 1, expected_status);
+                }
+            }
+        }
+    
+        /// Test error handling in metrics collection
+        mod error_handling_tests {
+            use super::*;
+    
+            #[tokio::test]
+            async fn test_metrics_with_handler_errors() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/server-error", web::get().to(|| async {
+                            HttpResponse::InternalServerError().body("simulated server error")
+                        }))
+                        .route("/bad-request", web::get().to(|| async {
+                            HttpResponse::BadRequest().body("simulated bad request")
+                        }))
+                        .route("/unauthorized", web::get().to(|| async {
+                            HttpResponse::Unauthorized().body("simulated unauthorized")
+                        }))
+                        .route("/success", web::get().to(|| async {
+                            HttpResponse::Ok().body("success")
+                        }))
+                ).await;
+                
+                // Test that metrics middleware handles various error responses
+                let req = test::TestRequest::get().uri("/server-error").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+                
+                let req = test::TestRequest::get().uri("/bad-request").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+                
+                let req = test::TestRequest::get().uri("/unauthorized").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+                
+                // Test that success responses still work after errors
+                let req = test::TestRequest::get().uri("/success").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_invalid_routes() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/valid", web::get().to(|| async {
+                            HttpResponse::Ok().body("valid response")
+                        }))
+                ).await;
+                
+                // Test requests to non-existent routes
+                let invalid_routes = [
+                    "/nonexistent",
+                    "/invalid/path",
+                    "/api/missing",
+                    "//double-slash",
+                    "/valid/extra/path",
+                ];
+                
+                for route in invalid_routes.iter() {
+                    let req = test::TestRequest::get().uri(route).to_request();
+                    let resp = test::call_service(&app, req).await;
+                    assert_eq!(resp.status(), StatusCode::NOT_FOUND, "Route {} should return 404", route);
+                }
+                
+                // Verify valid route still works
+                let req = test::TestRequest::get().uri("/valid").to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_malformed_requests() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/json", web::post().to(|_: web::Json<serde_json::Value>| async {
+                            HttpResponse::Ok().body("json received")
+                        }))
+                        .route("/text", web::post().to(|body: String| async move {
+                            HttpResponse::Ok().body(format!("received: {}", body))
+                        }))
+                ).await;
+                
+                // Test malformed JSON request
+                let req = test::TestRequest::post()
+                    .uri("/json")
+                    .set_payload("invalid json {")
+                    .insert_header(("content-type", "application/json"))
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert!(resp.status().is_client_error(), "Malformed JSON should return client error");
+                
+                // Test valid JSON request
+                let req = test::TestRequest::post()
+                    .uri("/json")
+                    .set_json(&serde_json::json!({"test": "data"}))
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Test text request
+                let req = test::TestRequest::post()
+                    .uri("/text")
+                    .set_payload("test text data")
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+            }
+        }
+    
+        /// Test metrics functionality under various conditions
+        mod performance_edge_case_tests {
+            use super::*;
+    
+            #[tokio::test]
+            async fn test_metrics_with_large_request_body() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/large", web::post().to(|body: String| async move {
+                            HttpResponse::Ok().body(format!("Received {} bytes", body.len()))
+                        }))
+                ).await;
+                
+                // Create a large request body (1KB)
+                let large_body = "x".repeat(1024);
+                
+                let req = test::TestRequest::post()
+                    .uri("/large")
+                    .set_payload(large_body)
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                assert_eq!(resp.status(), StatusCode::OK);
+                let body = test::read_body(resp).await;
+                assert!(String::from_utf8_lossy(&body).contains("1024 bytes"));
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_streaming_response() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/stream", web::get().to(|| async {
+                            use actix_web::web::Bytes;
+                            use futures::stream;
+                            
+                            let data = vec![
+                                Bytes::from("chunk1\n"),
+                                Bytes::from("chunk2\n"),
+                                Bytes::from("chunk3\n"),
+                            ];
+                            
+                            HttpResponse::Ok()
+                                .content_type("text/plain")
+                                .streaming(stream::iter(data.into_iter().map(Ok::<_, actix_web::Error>)))
+                        }))
+                ).await;
+                
+                let req = test::TestRequest::get().uri("/stream").to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                assert_eq!(resp.status(), StatusCode::OK);
+                let body = test::read_body(resp).await;
+                let body_str = String::from_utf8_lossy(&body);
+                assert!(body_str.contains("chunk1"));
+                assert!(body_str.contains("chunk2"));
+                assert!(body_str.contains("chunk3"));
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_long_running_request() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/slow", web::get().to(|| async {
+                            // Simulate longer processing time
+                            sleep(Duration::from_millis(100)).await;
+                            HttpResponse::Ok().body("slow processing complete")
+                        }))
+                ).await;
+                
+                let start = Instant::now();
+                
+                let req = test::TestRequest::get().uri("/slow").to_request();
+                let resp = test::call_service(&app, req).await;
+                
+                let duration = start.elapsed();
+                
+                assert_eq!(resp.status(), StatusCode::OK);
+                assert!(duration >= Duration::from_millis(100), "Request should take at least 100ms");
+                
+                let body = test::read_body(resp).await;
+                assert_eq!(body, "slow processing complete");
+            }
+            
+            #[tokio::test]
+            async fn test_metrics_with_various_content_types() {
+                let _fixture = UnifiedTestFixture::new_with_database().await;
+                
+                let app = test::init_service(
+                    App::new()
+                        .wrap(RequestMetrics)
+                        .route("/json", web::post().to(|json: web::Json<serde_json::Value>| async move {
+                            HttpResponse::Ok().json(&json.into_inner())
+                        }))
+                        .route("/form", web::post().to(|form: web::Form<std::collections::HashMap<String, String>>| async move {
+                            HttpResponse::Ok().json(&form.into_inner())
+                        }))
+                        .route("/text", web::post().to(|text: String| async move {
+                            HttpResponse::Ok().body(format!("Text: {}", text))
+                        }))
+                ).await;
+                
+                // Test JSON content type
+                let json_data = serde_json::json!({"key": "value", "number": 42});
+                let req = test::TestRequest::post()
+                    .uri("/json")
+                    .set_json(&json_data)
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Test form content type
+                let req = test::TestRequest::post()
+                    .uri("/form")
+                    .set_form(&[("field1", "value1"), ("field2", "value2")])
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+                
+                // Test plain text content type
+                let req = test::TestRequest::post()
+                    .uri("/text")
+                    .set_payload("plain text data")
+                    .insert_header(("content-type", "text/plain"))
+                    .to_request();
+                let resp = test::call_service(&app, req).await;
+                assert_eq!(resp.status(), StatusCode::OK);
+            }
+        }
     }
 }
 

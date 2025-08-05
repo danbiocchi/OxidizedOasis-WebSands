@@ -126,3 +126,4 @@ path = "tests/integration/user_crud_tests.rs"
 [[test]]
 name = "user_tests"
 path = "tests/integration/user_tests.rs"
+
