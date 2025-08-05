@@ -58,8 +58,7 @@ where
             let res = service.call(req).await;
             let duration = start_time.elapsed();
             println!(
-                "Request #{}: processed in {:?}",
-                current_total_requests, duration
+                "Request #{current_total_requests}: processed in {duration:?}"
             );
             res
         })

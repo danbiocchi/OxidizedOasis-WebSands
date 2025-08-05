@@ -6,27 +6,34 @@ use super::password::validate_password;
 use actix_web::web;
 use super::super::utils::validation::USERNAME_REGEX;
 
+fn validate_username_regex(username: &str) -> Result<(), validator::ValidationError> {
+    if !USERNAME_REGEX.is_match(username) {
+        return Err(validator::ValidationError::new("regex"));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, Validate, Clone)]
 pub struct UserInput {
-    #[validate(length(min = 3, max = 50), regex = "USERNAME_REGEX")]
+    #[validate(length(min = 3, max = 50), custom(function = "validate_username_regex"))]
     pub username: String,
     #[validate(email)]
     pub email: Option<String>,
-    #[validate(custom = "validate_password")]
+    #[validate(custom(function = "validate_password"))]
     pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct LoginInput {
-    #[validate(length(min = 3, max = 50), regex = "USERNAME_REGEX")]
+    #[validate(length(min = 3, max = 50), custom(function = "validate_username_regex"))]
     pub username: String,
-    #[validate(custom = "validate_password")]
+    #[validate(custom(function = "validate_password"))]
     pub password: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate, Clone)]
 pub struct RegisterInput {
-    #[validate(length(min = 3, max = 50), regex = "USERNAME_REGEX")]
+    #[validate(length(min = 3, max = 50), custom(function = "validate_username_regex"))]
     pub username: String,
     #[validate(email)]
     pub email: String,
@@ -55,12 +62,12 @@ fn collect_errors_recursive(
 ) {
     match errors_kind {
         ValidationErrorsKind::Field(field_vec) => {
-            all_errors.extend(field_vec.into_iter());
+            all_errors.extend(field_vec);
         }
         ValidationErrorsKind::Struct(struct_errors_box) => {
             // struct_errors_box is Box<validator::ValidationErrors>
             // .errors() returns &IndexMap<Cow<'static, str>, ValidationErrorsKind>
-            for (_name, kind_ref) in struct_errors_box.errors() { 
+            for kind_ref in struct_errors_box.errors().values() { 
                 collect_errors_recursive(kind_ref.clone(), all_errors);
             }
         }
@@ -69,7 +76,7 @@ fn collect_errors_recursive(
             // Each value in list_errors_map is Box<ValidationErrors>
             for (_index, nested_errors_box) in list_errors_map {
                 // nested_errors_box is Box<validator::ValidationErrors>
-                for (_name, kind_ref) in nested_errors_box.errors() { 
+                for kind_ref in nested_errors_box.errors().values() { 
                     collect_errors_recursive(kind_ref.clone(), all_errors);
                 }
             }

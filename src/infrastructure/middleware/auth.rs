@@ -129,7 +129,7 @@ async fn jwt_auth_validator_internal(
     };
 
     println!("🔍 DEBUG: Validating JWT token for request: {}", req.path());
-    println!("🔍 DEBUG: Expected audience: {:?}", expected_audience);
+    println!("🔍 DEBUG: Expected audience: {expected_audience:?}");
     
     // Decode token without validation to see what's actually in it
     let decode_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
@@ -158,7 +158,7 @@ async fn jwt_auth_validator_internal(
             info!("🔍 DEBUG: Token validated successfully for user: {} on path: {}", claims.sub, req.path());
             let now = chrono::Utc::now().timestamp();
             let remaining_time = claims.exp - now;
-            debug!("🔍 DEBUG: Token expires in {} seconds", remaining_time);
+            debug!("🔍 DEBUG: Token expires in {remaining_time} seconds");
             if remaining_time < 300 {
                 warn!("🔍 DEBUG: Token for user {} is about to expire in {} seconds", claims.sub, remaining_time);
             }
@@ -989,6 +989,12 @@ mod tests {
 
 pub struct CookieAuth;
 
+impl Default for CookieAuth {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CookieAuth {
     #[allow(dead_code)]
     pub fn new() -> Self {
@@ -1117,7 +1123,7 @@ where
                     service.call(req).await.map(|res| res.map_into_boxed_body())
                 },
                 Err(e) => {
-                    error!("Token validation failed: {:?}", e);
+                    error!("Token validation failed: {e:?}");
                     let auth_err = AuthError::new(
                         "Invalid or expired token".to_string(),
                         401,
@@ -1192,7 +1198,7 @@ pub async fn cookie_auth_middleware(
             Ok(req)
         },
         Err(e) => {
-            error!("Cookie token validation failed: {:?}", e);
+            error!("Cookie token validation failed: {e:?}");
             Err((
                 AuthError::new(
                     "Invalid or expired token in cookie".to_string(),

@@ -25,13 +25,13 @@ async fn health_check(pool: web::Data<PgPool>) -> impl Responder {
             match sqlx::query("SELECT 1").execute(&mut *conn).await {
                 Ok(_) => "OK".to_string(),
                 Err(e) => {
-                    log::error!("Database ping failed: {}", e);
+                    log::error!("Database ping failed: {e}");
                     "Error".to_string()
                 }
             }
         }
         Err(e) => {
-            log::error!("Failed to acquire database connection: {}", e);
+            log::error!("Failed to acquire database connection: {e}");
             "Error".to_string()
         }
     };

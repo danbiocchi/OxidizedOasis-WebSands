@@ -35,6 +35,12 @@ pub struct EmailService {
     email_password_reset_subject: String,
 }
 
+impl Default for EmailService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EmailService {
     pub fn new() -> Self {
         EmailService {
@@ -66,7 +72,7 @@ impl EmailService {
 impl EmailServiceTrait for EmailService {
     async fn send_verification_email(&self, to_email: &str, verification_token: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let base_url = Self::get_base_url();
-        let verification_url = format!("{}/users/verify?token={}", base_url, verification_token);
+        let verification_url = format!("{base_url}/users/verify?token={verification_token}");
 
         let template = EmailTemplate::Verification {
             verification_url,
@@ -103,7 +109,7 @@ impl EmailServiceTrait for EmailService {
         match mailer.send(&email) { // Use the 'email' variable which is now correctly typed and assigned
             Ok(_) => Ok(()),
             Err(e) => {
-                error!("Could not send email: {:?}", e);
+                error!("Could not send email: {e:?}");
                 Err(Box::new(e) as Box<dyn Error + Send + Sync>)
             }
         }
@@ -111,7 +117,7 @@ impl EmailServiceTrait for EmailService {
 
     async fn send_password_reset_email(&self, to_email: &str, reset_token: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let base_url = Self::get_base_url();
-        let reset_url = format!("{}/password-reset/verify?token={}", base_url, reset_token);
+        let reset_url = format!("{base_url}/password-reset/verify?token={reset_token}");
 
         let template = EmailTemplate::PasswordReset {
             reset_url,
@@ -146,7 +152,7 @@ impl EmailServiceTrait for EmailService {
         match mailer.send(&email) { // Use the 'email' variable
             Ok(_) => Ok(()),
             Err(e) => {
-                error!("Could not send password reset email: {:?}", e);
+                error!("Could not send password reset email: {e:?}");
                 Err(Box::new(e) as Box<dyn Error + Send + Sync>)
             }
         }

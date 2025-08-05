@@ -9,7 +9,7 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), Box<dyn std::error::Err
             Ok(())
         },
         Err(e) => {
-            error!("Migration failed: {:?}", e);
+            error!("Migration failed: {e:?}");
             Err(Box::new(e))
         }
     }

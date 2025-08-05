@@ -116,7 +116,7 @@ pub fn create_jwt(
         &claims,
         &EncodingKey::from_secret(secret.as_ref()),
     ).map_err(|e| {
-        error!("Failed to create JWT: {:?}", e);
+        error!("Failed to create JWT: {e:?}");
         e
     })?;
     
@@ -181,7 +181,7 @@ pub async fn record_active_token(
         metadata.expires_at,
         None, // device_info is Option<serde_json::Value>
     ).await {
-        error!("Failed to record active token: {:?}", e);
+        error!("Failed to record active token: {e:?}");
     }
 }
 
@@ -195,23 +195,23 @@ pub async fn validate_jwt(
     expected_issuer: Option<String>,
 ) -> Result<Claims, jsonwebtoken::errors::Error> {
     debug!("Attempting to validate JWT");
-    debug!("JWT validation - expected_audience: {:?}, expected_issuer: {:?}", expected_audience, expected_issuer);
+    debug!("JWT validation - expected_audience: {expected_audience:?}, expected_issuer: {expected_issuer:?}");
 
     let mut validation = Validation::default();
     validation.leeway = 60;
     validation.validate_nbf = true; // Enable NBF (Not Before) claim validation
 
     if let Some(ref aud_str) = expected_audience {
-        debug!("JWT validation - setting expected audience: {}", aud_str);
+        debug!("JWT validation - setting expected audience: {aud_str}");
         validation.set_audience(&[aud_str.as_str()]);
     }
 
     if let Some(ref iss_str) = expected_issuer {
-        debug!("JWT validation - setting expected issuer: {}", iss_str);
+        debug!("JWT validation - setting expected issuer: {iss_str}");
         validation.set_issuer(&[iss_str.as_str()]);
     }
     
-    println!("🔍 DEBUG: About to validate JWT with audience: {:?}, issuer: {:?}", expected_audience, expected_issuer);
+    println!("🔍 DEBUG: About to validate JWT with audience: {expected_audience:?}, issuer: {expected_issuer:?}");
     match decode::<Claims>(token, &DecodingKey::from_secret(secret.as_ref()), &validation) {
         Ok(token_data) => {
             let claims = token_data.claims;
@@ -238,9 +238,9 @@ pub async fn validate_jwt(
             Ok(claims)
         },
         Err(e) => {
-            println!("🔍 DEBUG: JWT validation FAILED: {:?}", e);
+            println!("🔍 DEBUG: JWT validation FAILED: {e:?}");
             println!("🔍 DEBUG: Error kind: {:?}", e.kind());
-            error!("JWT validation failed: {:?}", e);
+            error!("JWT validation failed: {e:?}");
             Err(e)
         }
     }
@@ -255,7 +255,7 @@ pub async fn is_token_revoked(
     match token_revocation_service.is_token_revoked(jti).await {
         Ok(is_revoked) => is_revoked,
         Err(e) => {
-            error!("Error checking token revocation: {:?}", e);
+            error!("Error checking token revocation: {e:?}");
             true // Default to revoked on error for security
         }
     }
@@ -362,15 +362,15 @@ pub(crate) async fn revoke_token(
                 active_token_details.expires_at,
                 reason,
             ).await {
-                error!("Failed to revoke token {}: {:?}", jti, e);
+                error!("Failed to revoke token {jti}: {e:?}");
             }
             // Also remove the token from the active_tokens table
             if let Err(e) = active_token_service.remove_token(jti).await {
-                error!("Failed to remove active token {}: {:?}", jti, e);
+                error!("Failed to remove active token {jti}: {e:?}");
             }
         }
         Err(e) => {
-            error!("Failed to get active token details for JTI {} during revocation attempt: {:?}", jti, e);
+            error!("Failed to get active token details for JTI {jti} during revocation attempt: {e:?}");
         }
     }
 }
@@ -535,6 +535,9 @@ mod tests {
         env::set_var("JWT_AUDIENCE", "test_aud");
         env::set_var("JWT_ISSUER", "test_iss");
         
+        // Verify the environment variable is actually set correctly
+        assert_eq!(env::var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS").unwrap(), "1");
+        
         let user_id = Uuid::new_v4();
         let role = "admin".to_string();
         let token_type = TokenType::Refresh;
@@ -565,13 +568,8 @@ mod tests {
         assert!(claims.iat <= now + 2 && claims.iat >= now - 2, "iat mismatch");
         assert!(claims.nbf <= now + 2 && claims.nbf >= now - 2, "nbf mismatch");
 
-        // Use the configured value (1 day) that we set for this test
-        let configured_days = env::var("JWT_REFRESH_TOKEN_EXPIRATION_DAYS")
-            .unwrap_or_else(|_| "1".to_string()) // Default to 1 day since that's what we set
-            .parse::<i64>()
-            .unwrap_or(1);
-        
-        let expected_duration_seconds = Duration::days(configured_days).num_seconds();
+        // Explicitly check for 1 day duration since we set the environment variable to "1"
+        let expected_duration_seconds = 86400; // 1 day = 86400 seconds
         let actual_duration_seconds = claims.exp - claims.iat;
         
         const DURATION_LEEWAY: i64 = 10; // Allow 10 seconds leeway for duration
@@ -579,8 +577,8 @@ mod tests {
         assert!(
             actual_duration_seconds >= expected_duration_seconds - DURATION_LEEWAY &&
             actual_duration_seconds <= expected_duration_seconds + DURATION_LEEWAY,
-            "Refresh token duration mismatch. Expected duration: {}s ({} days), Actual duration: {}s. iat: {}, exp: {}, now: {}",
-            expected_duration_seconds, configured_days, actual_duration_seconds, claims.iat, claims.exp, now
+            "Refresh token duration mismatch. Expected duration: {}s (1 day), Actual duration: {}s. iat: {}, exp: {}, now: {}",
+            expected_duration_seconds, actual_duration_seconds, claims.iat, claims.exp, now
         );
         assert_eq!(metadata.expires_at, timestamp_to_datetime(claims.exp));
         

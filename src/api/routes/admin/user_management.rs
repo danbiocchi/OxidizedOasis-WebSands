@@ -65,7 +65,7 @@ pub async fn list_users(
     let users = repo.find_all()
         .await
         .map_err(|e| {
-            debug!("Error fetching users: {:?}", e);
+            debug!("Error fetching users: {e:?}");
             ApiError::from(e)
         })?;
 
@@ -82,15 +82,15 @@ pub async fn get_user(
     id: web::Path<Uuid>,
     repo: web::Data<Arc<dyn UserRepositoryTrait>>,
 ) -> Result<HttpResponse, ApiError> {
-    debug!("Handling GET /api/admin/users/{} -> get_user", id);
+    debug!("Handling GET /api/admin/users/{id} -> get_user");
     let user = repo.find_by_id(*id)
         .await
         .map_err(|e| {
-            debug!("Error fetching user {}: {:?}", id, e);
+            debug!("Error fetching user {id}: {e:?}");
             ApiError::from(e)
         })?
         .ok_or_else(|| {
-            debug!("User {} not found", id);
+            debug!("User {id} not found");
             ApiError::not_found("User not found")
         })?;
 
@@ -114,7 +114,7 @@ pub async fn update_user_role(
         debug!("🔍 [update_user_role] Claims found - user_id: {}, target_id: {}", claims.sub, *id);
         // The sub field in Claims is already a Uuid
         if claims.sub == *id {
-            debug!("🔍 [update_user_role] Self-edit detected for user {}", id);
+            debug!("🔍 [update_user_role] Self-edit detected for user {id}");
             return Err(ApiError::new(
                 "You cannot edit your own account. This could lead to session inconsistency issues.",
                 ApiErrorType::Authorization
@@ -134,11 +134,11 @@ pub async fn update_user_role(
     let user = repo.update_role(*id, &req.role)
         .await
         .map_err(|e| {
-            debug!("Error updating role for user {}: {:?}", id, e);
+            debug!("Error updating role for user {id}: {e:?}");
             ApiError::from(e)
         })?
         .ok_or_else(|| {
-            debug!("User {} not found for role update", id);
+            debug!("User {id} not found for role update");
             ApiError::not_found("User not found")
         })?;
 
@@ -161,7 +161,7 @@ pub async fn update_user_username(
     if let Some(claims) = claims {
         // The sub field in Claims is already a Uuid
         if claims.sub == *id {
-            debug!("User {} attempted to edit their own username", id);
+            debug!("User {id} attempted to edit their own username");
             return Err(ApiError::new(
                 "You cannot edit your own account. This could lead to session inconsistency issues.",
                 ApiErrorType::Authorization
@@ -179,11 +179,11 @@ pub async fn update_user_username(
     let _user = repo.find_by_id(*id)
         .await
         .map_err(|e| {
-            debug!("Error finding user {}: {:?}", id, e);
+            debug!("Error finding user {id}: {e:?}");
             ApiError::from(e)
         })?
         .ok_or_else(|| {
-            debug!("User {} not found for username update", id);
+            debug!("User {id} not found for username update");
             ApiError::not_found("User not found")
         })?;
     
@@ -191,11 +191,11 @@ pub async fn update_user_username(
     let updated_user = repo.update_username(*id, &req.username)
         .await
         .map_err(|e| {
-            debug!("Error updating username for user {}: {:?}", id, e);
+            debug!("Error updating username for user {id}: {e:?}");
             ApiError::from(e)
         })?
         .ok_or_else(|| {
-            debug!("User {} not found after username update", id);
+            debug!("User {id} not found after username update");
             ApiError::not_found("User not found")
         })?;
     
@@ -218,7 +218,7 @@ pub async fn update_user_status(
     if let Some(claims) = claims {
         // The sub field in Claims is already a Uuid
         if claims.sub == *id {
-            debug!("User {} attempted to edit their own status", id);
+            debug!("User {id} attempted to edit their own status");
             return Err(ApiError::new(
                 "You cannot edit your own account. This could lead to session inconsistency issues.",
                 ApiErrorType::Authorization
@@ -229,11 +229,11 @@ pub async fn update_user_status(
     let user = repo.update_status(*id, req.is_active)
         .await
         .map_err(|e| {
-            debug!("Error updating status for user {}: {:?}", id, e);
+            debug!("Error updating status for user {id}: {e:?}");
             ApiError::from(e)
         })?
         .ok_or_else(|| {
-            debug!("User {} not found for status update", id);
+            debug!("User {id} not found for status update");
             ApiError::not_found("User not found")
         })?;
 
@@ -248,13 +248,13 @@ pub async fn delete_user(
     repo: web::Data<Arc<dyn UserRepositoryTrait>>,
     claims: Option<web::ReqData<Claims>>,
 ) -> Result<HttpResponse, ApiError> {
-    debug!("Handling DELETE /api/admin/users/{} -> delete_user", id);
+    debug!("Handling DELETE /api/admin/users/{id} -> delete_user");
 
     // Check if user is trying to delete their own account
     if let Some(claims) = claims {
         // The sub field in Claims is already a Uuid
         if claims.sub == *id {
-            debug!("User {} attempted to delete their own account", id);
+            debug!("User {id} attempted to delete their own account");
             return Err(ApiError::new(
                 "You cannot delete your own account. This could lead to session inconsistency issues.",
                 ApiErrorType::Authorization
@@ -265,17 +265,17 @@ pub async fn delete_user(
     let deleted = repo.delete(*id)
         .await
         .map_err(|e| {
-            debug!("Error deleting user {}: {:?}", id, e);
+            debug!("Error deleting user {id}: {e:?}");
             ApiError::from(e)
         })?;
 
     // Check if a user was found and deleted
     if !deleted {
-        debug!("User {} not found for deletion", id);
+        debug!("User {id} not found for deletion");
         return Err(ApiError::not_found("User not found"));
     }
 
-    debug!("Deleted user {} successfully", id);
+    debug!("Deleted user {id} successfully");
 
     // Return success response with a message
     Ok(HttpResponse::Ok().json(json!({

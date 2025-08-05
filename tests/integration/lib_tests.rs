@@ -8,20 +8,18 @@ use oxidizedoasis_websands::{
     ApiError, AuthError, DbError,
     Claims, User, NewUser, AppConfig,
     create_pool,
-    // Test module imports - These imports exercise the pub mod statements in lib.rs
-    api, common, core, infrastructure,
 };
 
 #[cfg(test)]
 mod lib_module_tests {
-    use super::*;
+    
 
     /// Test that lib.rs pub mod declarations work correctly
     #[test]
     fn test_public_module_declarations() {
         // These imports directly test the pub mod statements in lib.rs
         use oxidizedoasis_websands::api;
-        use oxidizedoasis_websands::common;
+        
         use oxidizedoasis_websands::core;
         use oxidizedoasis_websands::infrastructure;
         
@@ -66,7 +64,7 @@ mod lib_module_tests {
         // Testing that we can access all modules and re-exports as expected
         
         // Test crate-level access
-        use oxidizedoasis_websands;
+        
         
         // These imports should work if lib.rs pub mod declarations are correct
         let crate_name = std::module_path!();
@@ -83,7 +81,7 @@ mod lib_module_tests {
         // This exercises the actual lib.rs file structure
         
         // Module exports (pub mod statements)
-        use oxidizedoasis_websands::{api, common, core, infrastructure};
+        use oxidizedoasis_websands::{api, core, infrastructure};
         
         // Type re-exports (pub use statements)
         use oxidizedoasis_websands::{
@@ -92,22 +90,18 @@ mod lib_module_tests {
         };
         
         // Verify no compilation errors occur when using lib.rs exports
-        let module_names = vec![
-            std::any::type_name::<api::handlers::user_handler::UserHandler>(),
+        let module_names = [std::any::type_name::<api::handlers::user_handler::UserHandler>(),
             std::any::type_name::<oxidizedoasis_websands::common::error::ApiError>(),
             std::any::type_name::<core::user::User>(),
-            std::any::type_name::<infrastructure::config::AppConfig>(),
-        ];
+            std::any::type_name::<infrastructure::config::AppConfig>()];
         
-        let type_names = vec![
-            std::any::type_name::<ApiError>(),
+        let type_names = [std::any::type_name::<ApiError>(),
             std::any::type_name::<AuthError>(),
             std::any::type_name::<DbError>(),
             std::any::type_name::<Claims>(),
             std::any::type_name::<User>(),
             std::any::type_name::<NewUser>(),
-            std::any::type_name::<AppConfig>(),
-        ];
+            std::any::type_name::<AppConfig>()];
         
         // All should contain expected type information
         assert!(!module_names.is_empty(), "Module names should be accessible");
@@ -168,7 +162,7 @@ mod lib_interface_tests {
 
         // Test DbError can be created using enum variants
         let db_error = DbError::ConnectionError("test".to_string());
-        assert_eq!(format!("{}", db_error), "Database connection error: test");
+        assert_eq!(format!("{db_error}"), "Database connection error: test");
     }
 
     /// Test that Claims struct is properly re-exported
@@ -323,7 +317,7 @@ mod module_accessibility_tests {
     #[test]
     fn test_public_modules_accessible() {
         // Test that we can access the main modules
-        use oxidizedoasis_websands::{api, common, core, infrastructure};
+        use oxidizedoasis_websands::{api, core, infrastructure};
         
         // These should compile without errors, proving the modules are public
         let _api_module = std::any::type_name::<api::handlers::user_handler::UserHandler>();

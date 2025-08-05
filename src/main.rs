@@ -37,7 +37,7 @@ fn validate_critical_env_vars() -> Result<(), Box<dyn std::error::Error>> {
     ];
     for var in required_vars {
         if env::var(var).is_err() {
-            return Err(format!("Missing required environment variable: {}", var).into());
+            return Err(format!("Missing required environment variable: {var}").into());
         }
     }
     Ok(())
@@ -50,7 +50,7 @@ async fn setup_database(config: &AppConfig, run_migrations: bool) -> Result<sqlx
         match sqlx::migrate!("./migrations").run(&pool).await {
             Ok(_) => info!("Migrations completed successfully"),
             Err(e) => {
-                error!("Migration failed: {:?}", e);
+                error!("Migration failed: {e:?}");
                 return Err(Box::new(e));
             }
         }
@@ -79,15 +79,15 @@ async fn main() -> std::io::Result<()> {
     info!("Starting OxidizedOasis-WebSands application");
 
     if let Err(e) = validate_critical_env_vars() {
-        error!("Environment validation failed: {}", e);
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+        error!("Environment validation failed: {e}");
+        return Err(std::io::Error::other(e.to_string()));
     }
 
     let config = match AppConfig::from_env() {
         Ok(config) => config,
         Err(e) => {
-            error!("Failed to load configuration: {:?}", e);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+            error!("Failed to load configuration: {e:?}");
+            return Err(std::io::Error::other(e.to_string()));
         }
     };
 
@@ -104,8 +104,8 @@ async fn main() -> std::io::Result<()> {
     ).await {
         Ok(Ok(pool)) => pool,
         Ok(Err(e)) => {
-            error!("Database setup failed: {:?}", e);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+            error!("Database setup failed: {e:?}");
+            return Err(std::io::Error::other(e.to_string()));
         }
         Err(_) => {
             error!("Database setup timed out");
@@ -140,9 +140,9 @@ async fn main() -> std::io::Result<()> {
             interval.tick().await;
             match cleanup_revoked_service.cleanup_expired_tokens().await {
                 Ok(count) => {
-                    if count > 0 { info!("Cleaned up {} expired revoked tokens", count); }
+                    if count > 0 { info!("Cleaned up {count} expired revoked tokens"); }
                 },
-                Err(e) => { error!("Failed to clean up expired revoked tokens: {:?}", e); }
+                Err(e) => { error!("Failed to clean up expired revoked tokens: {e:?}"); }
             }
         }
     });
@@ -154,9 +154,9 @@ async fn main() -> std::io::Result<()> {
             interval.tick().await;
             match cleanup_active_service.cleanup_expired_tokens().await {
                 Ok(count) => {
-                    if count > 0 { info!("Cleaned up {} expired active tokens", count); }
+                    if count > 0 { info!("Cleaned up {count} expired active tokens"); }
                 },
-                Err(e) => { error!("Failed to clean up expired active tokens: {:?}", e); }
+                Err(e) => { error!("Failed to clean up expired active tokens: {e:?}"); }
             }
         }
     });
@@ -169,8 +169,8 @@ async fn main() -> std::io::Result<()> {
         active_token_service_arc.clone() // Pass ActiveTokenService
     ));
 
-    let server_addr = format!("{}:{}", server_host, server_port);
-    debug!("Server will be listening on: {}", server_addr);
+    let server_addr = format!("{server_host}:{server_port}");
+    debug!("Server will be listening on: {server_addr}");
 
     HttpServer::new(move || {
         let app_config_clone = config_clone.clone(); 
@@ -218,7 +218,7 @@ async fn main() -> std::io::Result<()> {
                 match std::fs::read_to_string("./frontend/dist/index.html") {
                     Ok(contents) => HttpResponse::Ok().content_type("text/html; charset=utf-8").append_header(("Cache-Control", "no-store, must-revalidate")).append_header(("Pragma", "no-cache")).append_header(("Expires", "0")).body(contents),
                     Err(e) => {
-                        error!("Failed to read index.html: {}", e); 
+                        error!("Failed to read index.html: {e}"); 
                         HttpResponse::InternalServerError().content_type("application/json").body(r#"{"error": "An unexpected error occurred"}"#) 
                     }
                 }

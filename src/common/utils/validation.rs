@@ -17,7 +17,7 @@ pub fn validate_length(value: &str, min: usize, max: usize) -> Result<(), Valida
         // Use to_owned to convert the formatted string to an owned String
         return Err(ValidationError {
             code: "length".into(),
-            message: Some(format!("Length must be between {} and {} characters", min, max).to_owned().into()),
+            message: Some(format!("Length must be between {min} and {max} characters").to_owned().into()),
             params: Default::default(),
         });
     }

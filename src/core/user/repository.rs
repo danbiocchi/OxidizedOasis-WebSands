@@ -95,7 +95,7 @@ impl UserRepositoryTrait for UserRepository {
 
         match &user {
             Ok(u) => info!("Successfully created user with details, id: {}", u.id),
-            Err(e) => error!("Failed to create user with details: {}", e),
+            Err(e) => error!("Failed to create user with details: {e}"),
         }
         user
     }
@@ -140,7 +140,7 @@ impl UserRepositoryTrait for UserRepository {
 
         match &user {
             Ok(u) => info!("Successfully created user from NewUser, id: {}", u.id),
-            Err(e) => error!("Failed to create user from NewUser: {}", e),
+            Err(e) => error!("Failed to create user from NewUser: {e}"),
         }
         user
     }
@@ -271,7 +271,7 @@ impl UserRepositoryTrait for UserRepository {
         let current_user = self.find_by_id(id)
             .await?
             .ok_or_else(|| {
-                error!("User not found for update: {}", id);
+                error!("User not found for update: {id}");
                 sqlx::Error::RowNotFound
             })?;
 
@@ -302,7 +302,7 @@ impl UserRepositoryTrait for UserRepository {
         if let Ok(ref u) = user {
             info!("Successfully updated user: {}", u.id);
         } else if let Err(ref e) = user {
-            error!("Failed to update user {}: {}", id, e);
+            error!("Failed to update user {id}: {e}");
         }
         user
     }
@@ -458,9 +458,9 @@ impl UserRepositoryTrait for UserRepository {
 
         let deleted = result.rows_affected() > 0;
         if deleted {
-            info!("Successfully deleted user: {}", id);
+            info!("Successfully deleted user: {id}");
         } else {
-            debug!("No user found to delete with id: {}", id);
+            debug!("No user found to delete with id: {id}");
         }
         Ok(deleted)
     }
@@ -478,7 +478,7 @@ impl UserRepositoryTrait for UserRepository {
         )
         .fetch_optional(&self.pool)
         .await?;
-        Ok(result.map_or(false, |r| r.is_email_verified))
+        Ok(result.is_some_and(|r| r.is_email_verified))
     }
 
     async fn create_password_reset_token(&self, user_id: Uuid) -> Result<PasswordResetToken, sqlx::Error> {
@@ -508,8 +508,8 @@ impl UserRepositoryTrait for UserRepository {
         .await;
 
         match &reset_token {
-            Ok(_t) => info!("Created password reset token for user: {}", user_id),
-            Err(e) => error!("Failed to create password reset token: {}", e),
+            Ok(_t) => info!("Created password reset token for user: {user_id}"),
+            Err(e) => error!("Failed to create password reset token: {e}"),
         }
         reset_token
     }
@@ -623,7 +623,7 @@ impl UserRepositoryTrait for UserRepository {
 
         match &user {
             Ok(u) => info!("Successfully updated email for user: {}", u.id),
-            Err(e) => error!("Failed to update email for user {}: {}", user_id, e),
+            Err(e) => error!("Failed to update email for user {user_id}: {e}"),
         }
         user
     }

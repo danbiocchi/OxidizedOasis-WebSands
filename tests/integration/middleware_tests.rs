@@ -2,15 +2,13 @@
 //! Tests authentication, authorization, CORS, metrics, and other middleware components
 
 use actix_web::{test, web, App, http::StatusCode, cookie::Cookie, HttpMessage, FromRequest, HttpResponse, middleware};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
-use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 use tokio::time::{sleep, Instant};
 
 use oxidizedoasis_websands::infrastructure::middleware::{
-    auth::{jwt_auth_validator, cookie_auth_validator, AuthError},
+    auth::{jwt_auth_validator, cookie_auth_validator},
     admin::admin_validator,
     metrics::RequestMetrics,
 };
@@ -18,8 +16,8 @@ use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationServiceTrait;
 
 use test_common::{
-    create_test_app_config, generate_test_token, create_test_claims,
-    mocks::*, env::with_env_vars, TEST_JWT_SECRET, TEST_AUDIENCE, UnifiedTestFixture
+    create_test_app_config, generate_test_token,
+    mocks::*, env::with_env_vars, TEST_JWT_SECRET, UnifiedTestFixture
 };
 
 /// Test fixture for middleware tests
@@ -359,11 +357,11 @@ mod csrf_protection_tests {
                     let req = match *method {
                         "GET" => test::TestRequest::get().uri(uri).to_request(),
                         "POST" => test::TestRequest::post().uri(uri).to_request(),
-                        _ => panic!("Unsupported method: {}", method),
+                        _ => panic!("Unsupported method: {method}"),
                     };
                     
                     let resp = test::call_service(&app, req).await;
-                    assert_eq!(resp.status(), *expected_status, "Failed for {} {}", method, uri);
+                    assert_eq!(resp.status(), *expected_status, "Failed for {method} {uri}");
                 }
             }
             
@@ -488,7 +486,7 @@ mod csrf_protection_tests {
                 // Test POST request
                 let req = test::TestRequest::post()
                     .uri("/resource")
-                    .set_json(&serde_json::json!({"name": "new resource"}))
+                    .set_json(serde_json::json!({"name": "new resource"}))
                     .to_request();
                 let resp = test::call_service(&app, req).await;
                 assert_eq!(resp.status(), StatusCode::CREATED);
@@ -496,7 +494,7 @@ mod csrf_protection_tests {
                 // Test PUT request
                 let req = test::TestRequest::put()
                     .uri("/resource/1")
-                    .set_json(&serde_json::json!({"name": "updated resource"}))
+                    .set_json(serde_json::json!({"name": "updated resource"}))
                     .to_request();
                 let resp = test::call_service(&app, req).await;
                 assert_eq!(resp.status(), StatusCode::OK);
@@ -543,11 +541,11 @@ mod csrf_protection_tests {
                     let req = match *method {
                         "GET" => test::TestRequest::get().uri(uri).to_request(),
                         "POST" => test::TestRequest::post().uri(uri).to_request(),
-                        _ => panic!("Unsupported method: {}", method),
+                        _ => panic!("Unsupported method: {method}"),
                     };
                     
                     let resp = test::call_service(&app, req).await;
-                    assert_eq!(resp.status(), *expected_status, "Failed for {} {}", method, uri);
+                    assert_eq!(resp.status(), *expected_status, "Failed for {method} {uri}");
                 }
             }
         }
@@ -608,7 +606,7 @@ mod csrf_protection_tests {
                     let req = match method {
                         "GET" => test::TestRequest::get().uri(uri).to_request(),
                         "POST" => test::TestRequest::post().uri(uri).to_request(),
-                        _ => panic!("Unsupported method: {}", method),
+                        _ => panic!("Unsupported method: {method}"),
                     };
                     
                     let resp = test::call_service(&app, req).await;
@@ -685,7 +683,7 @@ mod csrf_protection_tests {
                 for route in invalid_routes.iter() {
                     let req = test::TestRequest::get().uri(route).to_request();
                     let resp = test::call_service(&app, req).await;
-                    assert_eq!(resp.status(), StatusCode::NOT_FOUND, "Route {} should return 404", route);
+                    assert_eq!(resp.status(), StatusCode::NOT_FOUND, "Route {route} should return 404");
                 }
                 
                 // Verify valid route still works
@@ -705,7 +703,7 @@ mod csrf_protection_tests {
                             HttpResponse::Ok().body("json received")
                         }))
                         .route("/text", web::post().to(|body: String| async move {
-                            HttpResponse::Ok().body(format!("received: {}", body))
+                            HttpResponse::Ok().body(format!("received: {body}"))
                         }))
                 ).await;
                 
@@ -721,7 +719,7 @@ mod csrf_protection_tests {
                 // Test valid JSON request
                 let req = test::TestRequest::post()
                     .uri("/json")
-                    .set_json(&serde_json::json!({"test": "data"}))
+                    .set_json(serde_json::json!({"test": "data"}))
                     .to_request();
                 let resp = test::call_service(&app, req).await;
                 assert_eq!(resp.status(), StatusCode::OK);
@@ -836,13 +834,13 @@ mod csrf_protection_tests {
                     App::new()
                         .wrap(RequestMetrics)
                         .route("/json", web::post().to(|json: web::Json<serde_json::Value>| async move {
-                            HttpResponse::Ok().json(&json.into_inner())
+                            HttpResponse::Ok().json(json.into_inner())
                         }))
                         .route("/form", web::post().to(|form: web::Form<std::collections::HashMap<String, String>>| async move {
-                            HttpResponse::Ok().json(&form.into_inner())
+                            HttpResponse::Ok().json(form.into_inner())
                         }))
                         .route("/text", web::post().to(|text: String| async move {
-                            HttpResponse::Ok().body(format!("Text: {}", text))
+                            HttpResponse::Ok().body(format!("Text: {text}"))
                         }))
                 ).await;
                 
@@ -858,7 +856,7 @@ mod csrf_protection_tests {
                 // Test form content type
                 let req = test::TestRequest::post()
                     .uri("/form")
-                    .set_form(&[("field1", "value1"), ("field2", "value2")])
+                    .set_form([("field1", "value1"), ("field2", "value2")])
                     .to_request();
                 let resp = test::call_service(&app, req).await;
                 assert_eq!(resp.status(), StatusCode::OK);
@@ -878,7 +876,7 @@ mod csrf_protection_tests {
 
 #[cfg(test)]
 mod rate_limiting_tests {
-    use super::*;
+    
     
     #[actix_rt::test]
     async fn test_rate_limiting_under_limit() {

@@ -3,7 +3,6 @@ use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
     Error, HttpResponse,
     body::EitherBody,
-    http::StatusCode,
 };
 use log::{debug, warn};
 use dashmap::DashMap;
@@ -68,6 +67,12 @@ const RATE_LIMITS: &[RateLimit] = &[
 
 pub struct RateLimiter;
 
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RateLimiter {
     pub fn new() -> Self {
         RateLimiter
@@ -118,7 +123,7 @@ where
         
         // Extract base path without query parameters
         let base_path = path.split('?').next().unwrap_or(path);
-        debug!("Rate limit checking path: {}", base_path);
+        debug!("Rate limit checking path: {base_path}");
 
         // Skip rate limiting for static files
         if base_path.ends_with(".css") || base_path.ends_with(".js") || 
@@ -149,12 +154,12 @@ where
             .as_secs();
 
         // Create a unique key combining IP and endpoint path for independent rate limiting
-        let rate_limit_key = format!("{}:{}", ip, base_path);
+        let rate_limit_key = format!("{ip}:{base_path}");
         
         let mut timestamps = self
             .rate_limits
             .entry(rate_limit_key.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .value()
             .clone();
 
@@ -187,7 +192,7 @@ where
             );
             let reset_time = timestamps[0] + rate_limit.window_seconds;
             let wait_seconds = reset_time.saturating_sub(now);
-            let wait_minutes = (wait_seconds + 59) / 60;
+            let wait_minutes = wait_seconds.div_ceil(60);
 
             let error_response = HttpResponse::TooManyRequests()
                 .append_header(("Retry-After", wait_seconds.to_string()))

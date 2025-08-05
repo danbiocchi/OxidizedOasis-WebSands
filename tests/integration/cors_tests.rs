@@ -1,6 +1,4 @@
 use actix_cors::Cors;
-use actix_web::http;
-use std::collections::HashMap;
 use std::sync::Mutex;
 use oxidizedoasis_websands::infrastructure::middleware::cors::configure_cors;
 
@@ -206,7 +204,7 @@ async fn test_configure_cors_with_all_environments() {
         // Verify result
         let cors_name = std::any::type_name_of_val(&cors);
         assert!(cors_name.contains("Cors"), 
-                "Should return Cors instance for environment: {}", env);
+                "Should return Cors instance for environment: {env}");
         
         // Clean up
         std::env::remove_var("ENVIRONMENT");

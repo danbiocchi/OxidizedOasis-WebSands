@@ -6,23 +6,16 @@ use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;
 
-use oxidizedoasis_websands::core::user::{User, UserRepositoryTrait, UserError};
-use oxidizedoasis_websands::core::user::repository::MockUserRepositoryTrait;
+use oxidizedoasis_websands::core::user::{User, UserRepositoryTrait};
 use oxidizedoasis_websands::api::routes::admin::user_management::{
-    update_user_role, update_user_status, UpdateRoleRequest, UpdateStatusRequest,
-    list_users, get_user, delete_user, update_user_username, UpdateUsernameRequest
+    update_user_role, update_user_status, UpdateRoleRequest, UpdateStatusRequest, update_user_username, UpdateUsernameRequest
 };
 use oxidizedoasis_websands::core::auth::{AuthService};
-use oxidizedoasis_websands::core::auth::active_token::ActiveTokenService;
-use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationService;
-use oxidizedoasis_websands::core::email::service::EmailService;
-use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
-use oxidizedoasis_websands::common::error::ApiErrorType;
 
 use test_common::{
-    UnifiedTestFixture, create_test_user, create_standard_mock_services,
+    UnifiedTestFixture, create_test_user,
     test_data::*, http::*, mocks::*
 };
 
@@ -31,7 +24,7 @@ fn mock_user(id: Uuid, username: &str, role: &str, is_active: bool) -> User {
     User {
         id,
         username: username.to_string(),
-        email: Some(format!("{}@example.com", username)),
+        email: Some(format!("{username}@example.com")),
         password_hash: "hashed_password".to_string(),
         role: role.to_string(),
         is_active,

@@ -6,7 +6,7 @@ use crate::common::{
 };
 use crate::core::user::{User, UserRepositoryTrait, NewUser}; 
 use std::{env, sync::Arc};
-use super::jwt::{self, Claims, TokenType, TokenPair, create_token_pair, TokenMetadata};
+use super::jwt::{self, Claims, TokenType, TokenPair, TokenMetadata};
 use crate::core::auth::token_revocation::TokenRevocationServiceTrait;
 use crate::core::auth::active_token::ActiveTokenServiceTrait;
 use crate::core::email::service::EmailServiceTrait;
@@ -92,7 +92,7 @@ impl AuthService {
         let claims = match jwt::validate_jwt(&self.token_revocation_service, token, &self.jwt_secret, Some(TokenType::Access), Some(self.jwt_audience.clone()), None).await {
             Ok(claims) => claims,
             Err(e) => {
-                warn!("Token validation failed: {:?}", e);
+                warn!("Token validation failed: {e:?}");
                 return Err(AuthError::new(AuthErrorType::InvalidToken));
             }
         };
@@ -102,12 +102,12 @@ impl AuthService {
             .await
             .map_err(|e| {
                 warn!("Validate_auth: User repository error on find_by_id for {}: {:?}", claims.sub, e);
-                return AuthError::new(AuthErrorType::InvalidToken)
+                AuthError::new(AuthErrorType::InvalidToken)
             })?
             .ok_or_else(|| {
                 warn!("Validate_auth: User not found by id from token: {}", claims.sub);
                 println!("🔍 DEBUG: AuthService.validate_auth - User NOT FOUND for ID: {}", claims.sub);
-                return AuthError::new(AuthErrorType::InvalidToken)
+                AuthError::new(AuthErrorType::InvalidToken)
             })?;
 
         println!("🔍 DEBUG: AuthService.validate_auth - Found user: {}, email_verified: {}", user.username, user.is_email_verified);
@@ -132,7 +132,7 @@ impl AuthService {
         ).await {
             Ok(token_pair) => token_pair,
             Err(e) => {
-                warn!("Token refresh failed: {:?}", e);
+                warn!("Token refresh failed: {e:?}");
                 return Err(AuthError::new(AuthErrorType::InvalidToken));
             }
         };
@@ -157,7 +157,7 @@ impl AuthService {
         let access_claims = match jwt::validate_jwt(&self.token_revocation_service, &token_pair.access_token, &self.jwt_secret, Some(TokenType::Access), Some(self.jwt_audience.clone()), None).await {
             Ok(claims) => claims,
             Err(e) => {
-                warn!("record_tokens_for_user: Failed to validate access token for recording for user {}: {:?}", user_id, e);
+                warn!("record_tokens_for_user: Failed to validate access token for recording for user {user_id}: {e:?}");
                 return Err(AuthError::new(AuthErrorType::InternalServerError));
             }
         };
@@ -165,7 +165,7 @@ impl AuthService {
         let refresh_claims = match jwt::validate_jwt(&self.token_revocation_service, &token_pair.refresh_token, &self.jwt_secret, Some(TokenType::Refresh), Some(self.jwt_audience.clone()), None).await {
             Ok(claims) => claims,
             Err(e) => {
-                warn!("record_tokens_for_user: Failed to validate refresh token for recording for user {}: {:?}", user_id, e);
+                warn!("record_tokens_for_user: Failed to validate refresh token for recording for user {user_id}: {e:?}");
                 return Err(AuthError::new(AuthErrorType::InternalServerError));
             }
         };
@@ -180,7 +180,7 @@ impl AuthService {
         let access_claims = match jwt::validate_jwt(&self.token_revocation_service, access_token, &self.jwt_secret, Some(TokenType::Access), Some(self.jwt_audience.clone()), None).await {
             Ok(claims) => claims,
             Err(e) => {
-                warn!("Logout: Failed to validate access token: {:?}", e);
+                warn!("Logout: Failed to validate access token: {e:?}");
                 return Err(AuthError::new(AuthErrorType::InvalidToken));
             }
         };
@@ -193,7 +193,7 @@ impl AuthService {
                      jwt::revoke_token(&self.token_revocation_service, &self.active_token_service, &refresh_claims.jti, refresh_claims.sub, TokenType::Refresh, Some("User logout")).await;
                 },
                 Err(e) => {
-                    warn!("Logout: Failed to validate refresh token, not revoking: {:?}", e);
+                    warn!("Logout: Failed to validate refresh token, not revoking: {e:?}");
                 }
             }
         }
@@ -260,33 +260,33 @@ impl AuthService {
         let user = self.user_repository.find_by_id(user_id)
             .await
             .map_err(|e| {
-                error!("Change Password: User repository error on find_by_id for {}: {:?}", user_id, e);
+                error!("Change Password: User repository error on find_by_id for {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?
             .ok_or_else(|| {
-                warn!("Change Password: User not found by id: {}", user_id);
+                warn!("Change Password: User not found by id: {user_id}");
                 AuthError::new(AuthErrorType::UserNotFound)
             })?;
 
         if !verify(&old_password, &user.password_hash)
             .map_err(|e| {
-                error!("Change Password: Old password verification (bcrypt) error for user {}: {:?}", user_id, e);
+                error!("Change Password: Old password verification (bcrypt) error for user {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })? {
-            warn!("Change Password: Invalid old password for user: {}", user_id);
+            warn!("Change Password: Invalid old password for user: {user_id}");
             return Err(AuthError::new(AuthErrorType::InvalidCredentials));
         }
 
         let new_password_hash = bcrypt::hash(&new_password, bcrypt::DEFAULT_COST)
             .map_err(|e| {
-                error!("Change Password: Failed to hash new password for {}: {:?}", user_id, e);
+                error!("Change Password: Failed to hash new password for {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
         self.user_repository.update_password(user_id, &new_password_hash)
             .await
             .map_err(|e| {
-                error!("Change Password: User repository error on update_password for {}: {:?}", user_id, e);
+                error!("Change Password: User repository error on update_password for {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
@@ -304,7 +304,7 @@ impl AuthService {
         let user_id_option = self.user_repository.verify_email(token)
             .await
             .map_err(|e| {
-                error!("Verify Email: User repository error on verify_email: {:?}", e);
+                error!("Verify Email: User repository error on verify_email: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
@@ -331,7 +331,7 @@ impl AuthService {
                         return Err(AuthError::new(AuthErrorType::InvalidVerificationToken));
                     }
                     Err(e) => {
-                        error!("Verify Email: User repository error during find_by_verification_token: {:?}", e);
+                        error!("Verify Email: User repository error during find_by_verification_token: {e:?}");
                         return Err(AuthError::new(AuthErrorType::InternalServerError));
                     }
                 }
@@ -340,11 +340,11 @@ impl AuthService {
 
         let user = self.user_repository.find_by_id(user_id).await
              .map_err(|e| {
-                error!("Verify Email: User repository error on find_by_id after verification for {}: {:?}", user_id, e);
+                error!("Verify Email: User repository error on find_by_id after verification for {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?
             .ok_or_else(|| {
-                warn!("Verify Email: User not found by id after verification: {}", user_id);
+                warn!("Verify Email: User not found by id after verification: {user_id}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
@@ -356,11 +356,11 @@ impl AuthService {
         let user = self.user_repository.find_user_by_email(&email)
             .await
             .map_err(|e| {
-                error!("Request Password Reset: DB error finding user by email {}: {:?}", email, e);
+                error!("Request Password Reset: DB error finding user by email {email}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?
             .ok_or_else(|| {
-                warn!("Request Password Reset: User not found for email {}, but proceeding as if successful to prevent enumeration.", email);
+                warn!("Request Password Reset: User not found for email {email}, but proceeding as if successful to prevent enumeration.");
                 AuthError::new(AuthErrorType::UserNotFound)
             })?;
 
@@ -385,11 +385,11 @@ impl AuthService {
         let reset_token_model = self.user_repository.verify_reset_token(token)
             .await
             .map_err(|e| {
-                error!("Verify Password Reset Token: DB error verifying reset token: {:?}", e);
+                error!("Verify Password Reset Token: DB error verifying reset token: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?
             .ok_or_else(|| {
-                warn!("Verify Password Reset Token: Token not found or invalid: {}", token);
+                warn!("Verify Password Reset Token: Token not found or invalid: {token}");
                 AuthError::new(AuthErrorType::InvalidToken)
             })?;
         
@@ -402,23 +402,23 @@ impl AuthService {
 
         let new_password_hash = bcrypt::hash(&new_password, bcrypt::DEFAULT_COST)
             .map_err(|e| {
-                error!("Reset Password: Failed to hash new password for user {}: {:?}", user_id, e);
+                error!("Reset Password: Failed to hash new password for user {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
         self.user_repository.update_password(user_id, &new_password_hash)
             .await
             .map_err(|e| {
-                error!("Reset Password: User repository error on update_password for user {}: {:?}", user_id, e);
+                error!("Reset Password: User repository error on update_password for user {user_id}: {e:?}");
                 AuthError::new(AuthErrorType::InternalServerError)
             })?;
 
         // After successful password reset, revoke all tokens for the user
         if let Err(e) = self.token_revocation_service.revoke_all_user_tokens(user_id, Some("Password reset")).await {
-            warn!("Reset Password: Failed to revoke all tokens for user {} after password reset: {:?}", user_id, e);
+            warn!("Reset Password: Failed to revoke all tokens for user {user_id} after password reset: {e:?}");
             // Non-critical error, so we don't return an error here, but log it.
         } else {
-            info!("Reset Password: Revoked all tokens for user {} after password reset", user_id);
+            info!("Reset Password: Revoked all tokens for user {user_id} after password reset");
         }
         
         // It's important that the reset token is marked as used *after* the password has been successfully updated.
@@ -426,7 +426,7 @@ impl AuthService {
         // If verify_reset_token doesn't mark it as used, it should be updated to do so.
         // For now, we assume verify_reset_token handles this. If not, an explicit call to mark it as used would be needed here.
 
-        info!("Password reset successfully for user_id: {}", user_id);
+        info!("Password reset successfully for user_id: {user_id}");
         Ok(())
     }
 }

@@ -6,7 +6,6 @@
 use oxidizedoasis_websands::core::email::service::{EmailService, EmailServiceTrait, MockEmailServiceTrait};
 use std::env;
 use std::sync::Mutex;
-use tokio;
 
 // Use a global mutex to ensure tests that modify environment variables don't interfere with each other
 static ENV_MUTEX: Mutex<()> = Mutex::new(());

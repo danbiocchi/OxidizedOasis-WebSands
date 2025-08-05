@@ -8,6 +8,12 @@ use std::time::Instant;
 
 pub struct RequestLogger;
 
+impl Default for RequestLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RequestLogger {
     pub fn new() -> Self {
         RequestLogger
@@ -77,13 +83,7 @@ where
         let headers_count = req.headers().len();
 
         debug!(
-            "Incoming request: {} {} from {} with {} headers, Referer: {}, User-Agent: {}",
-            method,
-            path,
-            remote_addr,
-            headers_count,
-            referer,
-            user_agent
+            "Incoming request: {method} {path} from {remote_addr} with {headers_count} headers, Referer: {referer}, User-Agent: {user_agent}"
         );
 
         let fut = self.service.call(req);

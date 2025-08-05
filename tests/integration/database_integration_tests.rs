@@ -2,10 +2,8 @@ use test_common::{
     create_test_db_pool, create_test_new_user,
 };
 use test_common::database::DatabaseTestHelper;
-use chrono::{Duration, Utc};
-use oxidizedoasis_websands::core::user::{User, NewUser};
-use sqlx::{Pool, Postgres, Row};
-use std::sync::Arc;
+use oxidizedoasis_websands::core::user::User;
+use sqlx::Row;
 use uuid::Uuid;
 
 

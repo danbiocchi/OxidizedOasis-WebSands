@@ -82,10 +82,10 @@ async fn test_get_current_user_handler(
     use actix_web::HttpResponse;
     
     // Validate authentication using the test handler's auth service
-    let claims = match handler.auth_service.validate_auth(&auth.token()).await {
+    let claims = match handler.auth_service.validate_auth(auth.token()).await {
         Ok(claims) => claims,
         Err(e) => {
-            eprintln!("🔒 [TEST] Auth validation failed: {:?}", e);
+            eprintln!("🔒 [TEST] Auth validation failed: {e:?}");
             return Ok(HttpResponse::Unauthorized().json(json!({
                 "success": false,
                 "message": "Authentication failed"
@@ -98,7 +98,7 @@ async fn test_get_current_user_handler(
     // Get user from service
     match handler.user_service.get_user_by_id(user_id).await {
         Ok(user) => {
-            eprintln!("✅ [TEST] Successfully retrieved user: {}", user_id);
+            eprintln!("✅ [TEST] Successfully retrieved user: {user_id}");
             Ok(HttpResponse::Ok().json(json!({
                 "success": true,
                 "data": {
@@ -114,7 +114,7 @@ async fn test_get_current_user_handler(
             })))
         }
         Err(e) => {
-            eprintln!("❌ [TEST] Failed to get user {}: {:?}", user_id, e);
+            eprintln!("❌ [TEST] Failed to get user {user_id}: {e:?}");
             Ok(HttpResponse::NotFound().json(json!({
                 "success": false,
                 "message": "User not found"
@@ -192,7 +192,7 @@ impl ApiTestFixture {
         let pool = oxidizedoasis_websands::infrastructure::database::connection::create_pool(&config)
             .await
             .unwrap_or_else(|e| {
-                panic!("Failed to create database pool: {}", e)
+                panic!("Failed to create database pool: {e}")
             });
         
         let _user_handler = create_handler(
@@ -305,7 +305,7 @@ mod user_registration_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -362,7 +362,7 @@ mod user_registration_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -419,7 +419,7 @@ mod user_registration_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -516,7 +516,7 @@ mod user_authentication_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -579,7 +579,7 @@ mod user_authentication_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -634,7 +634,7 @@ mod user_authentication_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -722,7 +722,7 @@ mod user_authentication_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -763,7 +763,7 @@ mod user_authentication_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -798,7 +798,7 @@ mod user_authentication_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -840,7 +840,7 @@ mod password_reset_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -894,7 +894,7 @@ mod password_reset_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1002,7 +1002,7 @@ mod password_reset_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1062,7 +1062,7 @@ mod password_reset_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1162,7 +1162,7 @@ mod user_management_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1220,7 +1220,7 @@ mod user_management_tests {
             "username": "hacker"
         });
 
-        let req = create_auth_request("PUT", &format!("/api/users/{}", other_user_id), &token)
+        let req = create_auth_request("PUT", &format!("/api/users/{other_user_id}"), &token)
             .set_json(&update_data)
             .to_request();
 
@@ -1249,7 +1249,7 @@ mod user_management_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1330,7 +1330,7 @@ mod user_management_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1384,7 +1384,7 @@ mod user_management_tests {
         let token = test_common::generate_test_token(fixture.test_user_id, "user", 3600)
             .expect("Failed to generate test token");
         
-        let req = create_auth_request("DELETE", &format!("/api/users/{}", other_user_id), &token)
+        let req = create_auth_request("DELETE", &format!("/api/users/{other_user_id}"), &token)
             .to_request();
 
         // Create services with real database - use mockall-generated mock email service
@@ -1412,7 +1412,7 @@ mod user_management_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1503,7 +1503,7 @@ mod token_management_tests {
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1561,7 +1561,7 @@ mod token_management_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1614,7 +1614,7 @@ mod token_management_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1697,14 +1697,14 @@ mod error_handling_tests {
 
         let user_handler = create_handler(
             oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
+                .unwrap_or_else(|e| panic!("Failed to create database pool: {e}")),
             email_service,
             auth_service,
             token_revocation_service,
             active_token_service,
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1781,14 +1781,14 @@ mod error_handling_tests {
 
         let user_handler = create_handler(
             oxidizedoasis_websands::infrastructure::database::connection::create_pool(&fixture.config).await
-                .unwrap_or_else(|e| panic!("Failed to create database pool: {}", e)),
+                .unwrap_or_else(|e| panic!("Failed to create database pool: {e}")),
             email_service.clone(),
             auth_service.clone(),
             token_revocation_service.clone(),
             active_token_service.clone(),
         );
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1833,7 +1833,7 @@ mod error_handling_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -1878,7 +1878,7 @@ mod error_handling_tests {
             fixture.test_admin_id
         ).await;
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))

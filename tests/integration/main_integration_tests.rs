@@ -170,8 +170,8 @@ async fn test_environment_variable_handling() {
     
     for var in required_vars.iter() {
         let value = env::var(var);
-        assert!(value.is_ok(), "Required environment variable {} should be set", var);
-        assert!(!value.unwrap().is_empty(), "Environment variable {} should not be empty", var);
+        assert!(value.is_ok(), "Required environment variable {var} should be set");
+        assert!(!value.unwrap().is_empty(), "Environment variable {var} should not be empty");
     }
     
     // Test configuration loading with environment variables
@@ -201,7 +201,7 @@ async fn test_invalid_database_url_error_handling() {
     let error = pool_result.unwrap_err();
     let error_msg = error.to_string();
     assert!(error_msg.contains("Invalid database URL format") || error_msg.contains("invalid") || error_msg.contains("parse") || error_msg.contains("connection") || error_msg.contains("url"),
-           "Error message should indicate URL parsing issue: {}", error_msg);
+           "Error message should indicate URL parsing issue: {error_msg}");
     
     fixture.cleanup().await;
 }
@@ -404,8 +404,7 @@ async fn test_database_migration_state() {
     for table in required_tables.iter() {
         assert!(
             tables.contains(&table.to_string()),
-            "Required table '{}' should exist after migrations",
-            table
+            "Required table '{table}' should exist after migrations"
         );
     }
     
@@ -505,7 +504,7 @@ async fn test_json_payload_configuration() {
                     ).into()
                 }))
             .route("/test-json", web::post().to(|payload: web::Json<serde_json::Value>| async move {
-                HttpResponse::Ok().json(&payload.into_inner())
+                HttpResponse::Ok().json(payload.into_inner())
             }))
     ).await;
     

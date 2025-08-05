@@ -81,7 +81,7 @@ pub async fn update_log_settings(
 ) -> Result<HttpResponse, ApiError> {
     // Validate settings
     if let Some(retention_days) = req.retention_days {
-        if retention_days < 1 || retention_days > 365 {
+        if !(1..=365).contains(&retention_days) {
             return Err(ApiError::bad_request("Retention days must be between 1 and 365"));
         }
     }

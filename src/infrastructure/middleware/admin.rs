@@ -17,8 +17,8 @@ pub enum AdminError {
 impl fmt::Display for AdminError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AdminError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
-            AdminError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
+            AdminError::Unauthorized(msg) => write!(f, "Unauthorized: {msg}"),
+            AdminError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
         }
     }
 }
@@ -63,8 +63,8 @@ pub async fn admin_validator(req: ServiceRequest, credentials: BearerAuth) -> Re
     let expected_audience = std::env::var("JWT_AUDIENCE").ok();
     let expected_issuer = std::env::var("JWT_ISSUER").ok();
     
-    debug!("Admin middleware - expected_audience: {:?}, expected_issuer: {:?}", expected_audience, expected_issuer);
-    eprintln!("🔍 ADMIN MIDDLEWARE DEBUG - expected_audience: {:?}, expected_issuer: {:?}", expected_audience, expected_issuer);
+    debug!("Admin middleware - expected_audience: {expected_audience:?}, expected_issuer: {expected_issuer:?}");
+    eprintln!("🔍 ADMIN MIDDLEWARE DEBUG - expected_audience: {expected_audience:?}, expected_issuer: {expected_issuer:?}");
     
     // Validate as an access token - we don't accept refresh tokens for API access
     let validation_result = validate_jwt(&token_revocation_service, token, &jwt_secret, Some(TokenType::Access), expected_audience, expected_issuer).await;
@@ -94,7 +94,7 @@ pub async fn admin_validator(req: ServiceRequest, credentials: BearerAuth) -> Re
             Ok(req)
         },
         Err(e) => {
-            error!("Token validation failed: {:?}", e);
+            error!("Token validation failed: {e:?}");
             Err((AdminError::Unauthorized(
                 "Invalid or expired token".to_string()
             ).into(), req))

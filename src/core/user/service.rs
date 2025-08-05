@@ -41,7 +41,7 @@ impl UserService {
         let password_hash = if let Some(ref password) = validated_input.password {
             Some(hash(password.as_bytes(), DEFAULT_COST)
                 .map_err(|e| {
-                    error!("Failed to hash password: {}", e);
+                    error!("Failed to hash password: {e}");
                     ApiError::new("Failed to process password", ApiErrorType::Internal)
                 })?)
         } else {
@@ -60,14 +60,14 @@ impl UserService {
         )
             .await
             .map_err(|e| {
-                error!("Database error while creating user: {}", e);
+                error!("Database error while creating user: {e}");
                 ApiError::from(DbError::from(e))
             })?;
 
         if let Some(email) = &user.email {
-            debug!("Sending verification email to: {}", email);
+            debug!("Sending verification email to: {email}");
             if let Err(e) = self.email_service.send_verification_email(email, &token_for_email).await {
-                error!("Failed to send verification email: {}", e);
+                error!("Failed to send verification email: {e}");
             }
         }
 
@@ -90,39 +90,39 @@ impl UserService {
                 ))
             },
             Err(e) => {
-                error!("Database error while verifying email: {}", e);
+                error!("Database error while verifying email: {e}");
                 Err(ApiError::from(DbError::from(e)))
             }
         }
     }
 
     pub async fn get_user_by_id(&self, id: Uuid) -> Result<User, ApiError> {
-        debug!("Looking up user by id: {}", id);
+        debug!("Looking up user by id: {id}");
         self.repository.find_by_id(id)
             .await
             .map_err(|e| ApiError::from(DbError::from(e)))?
             .ok_or_else(|| {
-                debug!("User not found: {}", id);
+                debug!("User not found: {id}");
                 ApiError::new("User not found", ApiErrorType::NotFound)
             })
     }
 
     pub async fn update_user(&self, id: Uuid, input: UserInput) -> Result<User, ApiError> {
-        debug!("Attempting to update user: {}", id);
+        debug!("Attempting to update user: {id}");
 
         let validated_input = validate_and_sanitize_user_input(input)
             .map_err(|e| {
-                error!("Invalid input for user update {}: {:?}", id, e);
+                error!("Invalid input for user update {id}: {e:?}");
                 ApiError::new(e.into_iter().map(|ie| ie.to_string()).collect::<Vec<String>>().join(", "), ApiErrorType::Validation)
             })?;
 
         let current_user = self.repository.find_by_id(id).await
             .map_err(|e| {
-                error!("DB error fetching user {} for update: {}", id, e);
+                error!("DB error fetching user {id} for update: {e}");
                 ApiError::from(DbError::from(e))
             })?
             .ok_or_else(|| {
-                error!("User {} not found for update", id);
+                error!("User {id} not found for update");
                 ApiError::new("User not found", ApiErrorType::NotFound)
             })?;
 
@@ -130,13 +130,13 @@ impl UserService {
         let password_being_changed = validated_input.password.is_some();
 
         if email_being_changed {
-            info!("Email is being changed for user: {}", id);
+            info!("Email is being changed for user: {id}");
             let new_email_str = validated_input.email.as_ref().unwrap(); // Safe due to is_some() check
 
             // Check if new email is already in use by another verified user
             if let Some(other_user) = self.repository.find_by_email_and_verified(new_email_str).await
                 .map_err(|e| {
-                    error!("DB error checking email {} for user {}: {}", new_email_str, id, e);
+                    error!("DB error checking email {new_email_str} for user {id}: {e}");
                     ApiError::from(DbError::from(e))
                 })? {
                 if other_user.id != current_user.id {
@@ -151,10 +151,10 @@ impl UserService {
                 new_email_str,
                 &verification_token,
             ).await.map_err(|e| {
-                error!("DB error updating email for user {}: {}", id, e);
+                error!("DB error updating email for user {id}: {e}");
                 ApiError::from(DbError::from(e))
             })?;
-            info!("User {} email updated to {} and marked as unverified. Verification token generated.", id, new_email_str);
+            info!("User {id} email updated to {new_email_str} and marked as unverified. Verification token generated.");
 
             // If username is also being updated, update it now
             let mut final_user = user_after_email_update;
@@ -162,11 +162,11 @@ impl UserService {
                 info!("Username is also being changed for user: {} (from {} to {})", id, current_user.username, validated_input.username);
                 final_user = self.repository.update_username(current_user.id, &validated_input.username).await
                     .map_err(|e| {
-                        error!("DB error updating username for user {}: {}", id, e);
+                        error!("DB error updating username for user {id}: {e}");
                         ApiError::from(DbError::from(e))
                     })?
                     .ok_or_else(|| {
-                        error!("User {} not found after username update, this should not happen.", id);
+                        error!("User {id} not found after username update, this should not happen.");
                         ApiError::new("User consistency error after update", ApiErrorType::Internal)
                     })?;
                 info!("Username updated for user: {} to {}", id, validated_input.username);
@@ -176,76 +176,76 @@ impl UserService {
             let email_to_send = new_email_str.clone();
             let token_for_email = verification_token.clone();
             tokio::spawn(async move {
-                debug!("Asynchronously sending verification email to: {}", email_to_send);
+                debug!("Asynchronously sending verification email to: {email_to_send}");
                 if let Err(e) = email_service.send_verification_email(&email_to_send, &token_for_email).await {
-                    error!("Failed to send verification email to {}: {}", email_to_send, e);
+                    error!("Failed to send verification email to {email_to_send}: {e}");
                 } else {
-                    info!("Verification email successfully dispatched to: {}", email_to_send);
+                    info!("Verification email successfully dispatched to: {email_to_send}");
                 }
             });
 
             // final_user is already set above, no need to reassign
 
             if password_being_changed {
-                info!("Password is also being changed for user: {}", id);
+                info!("Password is also being changed for user: {id}");
                 let new_password = validated_input.password.as_ref().unwrap(); // Safe due to is_some() check
                 validate_password(new_password).map_err(|e| ApiError::new(e.to_string(), ApiErrorType::Validation))?; // Additional validation
                 
                 let password_hash = hash(new_password.as_bytes(), DEFAULT_COST)
                     .map_err(|e| {
-                        error!("Failed to hash new password for user {}: {}", id, e);
+                        error!("Failed to hash new password for user {id}: {e}");
                         ApiError::new("Failed to process password", ApiErrorType::Internal)
                     })?;
                 
                 self.repository.update_password(current_user.id, &password_hash).await
                     .map_err(|e| {
-                        error!("DB error updating password for user {}: {}", id, e);
+                        error!("DB error updating password for user {id}: {e}");
                         ApiError::from(DbError::from(e))
                     })?;
-                info!("Password updated for user: {}", id);
+                info!("Password updated for user: {id}");
 
                 final_user = self.repository.find_by_id(current_user.id).await
                     .map_err(|e| {
-                        error!("DB error re-fetching user {} after password update: {}", id, e);
+                        error!("DB error re-fetching user {id} after password update: {e}");
                         ApiError::from(DbError::from(e))
                     })?
                     .ok_or_else(|| {
-                        error!("User {} not found after password update, this should not happen.", id);
+                        error!("User {id} not found after password update, this should not happen.");
                         ApiError::new("User consistency error after update", ApiErrorType::Internal)
                     })?;
                 
-                debug!("Revoking tokens for user {} due to email and password change.", id);
+                debug!("Revoking tokens for user {id} due to email and password change.");
                 match self.token_revocation_service.revoke_all_user_tokens(current_user.id, Some("Password and email changed")).await {
-                    Ok(count) => info!("Revoked {} tokens for user {} after email and password change.", count, id),
-                    Err(e) => error!("Failed to revoke tokens for user {} after email and password change: {:?}", id, e),
+                    Ok(count) => info!("Revoked {count} tokens for user {id} after email and password change."),
+                    Err(e) => error!("Failed to revoke tokens for user {id} after email and password change: {e:?}"),
                 }
             } else {
                  // Email changed, but password did not. No specific token revocation reason for email change alone yet.
                  // Depending on policy, might want to revoke tokens here too. For now, only password change triggers it.
-                debug!("Email changed for user {} but password did not. No token revocation.", id);
+                debug!("Email changed for user {id} but password did not. No token revocation.");
             }
             
-            info!("User {} update (email change path) completed successfully.", id);
+            info!("User {id} update (email change path) completed successfully.");
             Ok(final_user)
 
         } else {
             // Scenario 2: Email is NOT being changed (or is the same as current), or validated_input.email is None
-            debug!("Email is not being changed for user: {}", id);
+            debug!("Email is not being changed for user: {id}");
             let mut password_hash_opt: Option<String> = None;
             let mut revocation_reason: Option<&str> = None;
 
             if password_being_changed {
-                info!("Password is being changed for user: {} (email not changing)", id);
+                info!("Password is being changed for user: {id} (email not changing)");
                 let new_password = validated_input.password.as_ref().unwrap(); // Safe
                 validate_password(new_password).map_err(|e| ApiError::new(e.to_string(), ApiErrorType::Validation))?;
 
                 password_hash_opt = Some(hash(new_password.as_bytes(), DEFAULT_COST)
                     .map_err(|e| {
-                        error!("Failed to hash password during update for user {}: {}", id, e);
+                        error!("Failed to hash password during update for user {id}: {e}");
                         ApiError::new("Failed to process password", ApiErrorType::Internal)
                     })?);
                 revocation_reason = Some("Password changed");
-                info!("Password hash generated for user {}", id);
+                info!("Password hash generated for user {id}");
             }
 
             // Use existing repository.update for username or other non-email-verification changes.
@@ -268,83 +268,83 @@ impl UserService {
             let updated_user = self.repository.update(current_user.id, &update_payload, password_hash_opt.clone())
                 .await
                 .map_err(|e| {
-                    error!("Failed to update user {} (non-email change path): {}", id, e);
+                    error!("Failed to update user {id} (non-email change path): {e}");
                     ApiError::from(DbError::from(e))
                 })?;
-            info!("User {} (non-email change path) updated in repository.", id);
+            info!("User {id} (non-email change path) updated in repository.");
             
             if let Some(reason) = revocation_reason {
-                debug!("Revoking tokens for user {} due to: {}", id, reason);
+                debug!("Revoking tokens for user {id} due to: {reason}");
                 match self.token_revocation_service.revoke_all_user_tokens(current_user.id, Some(reason)).await {
-                    Ok(count) => info!("Revoked {} tokens for user {} reason: {}.", count, id, reason),
-                    Err(e) => error!("Failed to revoke tokens for user {}: {:?}", id, e),
+                    Ok(count) => info!("Revoked {count} tokens for user {id} reason: {reason}."),
+                    Err(e) => error!("Failed to revoke tokens for user {id}: {e:?}"),
                 }
             }
             
-            info!("User {} update (non-email change path) completed successfully.", id);
+            info!("User {id} update (non-email change path) completed successfully.");
             Ok(updated_user)
         }
     }
 
     pub async fn delete_user(&self, id: Uuid) -> Result<(), ApiError> {
-        debug!("Attempting to delete user: {}", id);
+        debug!("Attempting to delete user: {id}");
         let deleted = self.repository.delete(id)
             .await
             .map_err(|e| {
-                error!("Database error while deleting user {}: {}", id, e);
+                error!("Database error while deleting user {id}: {e}");
                 ApiError::from(DbError::from(e))
             })?;
 
         if deleted {
-            info!("Successfully deleted user: {}", id);
+            info!("Successfully deleted user: {id}");
             Ok(())
         } else {
-            debug!("No user found to delete: {}", id);
+            debug!("No user found to delete: {id}");
             Err(ApiError::new("User not found", ApiErrorType::NotFound))
         }
     }
 
     pub async fn check_email_verified(&self, username: &str) -> Result<bool, ApiError> {
-        debug!("Checking email verification status for: {}", username);
+        debug!("Checking email verification status for: {username}");
         self.repository.check_email_verified(username)
             .await
             .map_err(|e| {
-                error!("Database error while checking email verification: {}", e);
+                error!("Database error while checking email verification: {e}");
                 ApiError::from(DbError::from(e))
             })
     }
 
     pub async fn request_password_reset(&self, email: &str) -> Result<(), ApiError> {
-        debug!("Processing password reset request for email: {}", email);
+        debug!("Processing password reset request for email: {email}");
         let user = match self.repository.find_user_by_email(email).await {
             Ok(Some(user)) => user,
             Ok(None) => {
-                debug!("No user found with email: {}", email);
+                debug!("No user found with email: {email}");
                 return Ok(());
             },
             Err(e) => return Err(ApiError::from(DbError::from(e))),
         };
 
         if !user.is_email_verified {
-            debug!("Attempted password reset for unverified email: {}", email);
+            debug!("Attempted password reset for unverified email: {email}");
             return Err(ApiError::new("Email not verified", ApiErrorType::Validation));
         }
 
         let reset_token = self.repository.create_password_reset_token(user.id)
             .await
             .map_err(|e| {
-                error!("Failed to create password reset token: {}", e);
+                error!("Failed to create password reset token: {e}");
                 ApiError::from(DbError::from(e))
             })?;
 
         self.email_service.send_password_reset_email(email, &reset_token.token)
             .await
             .map_err(|e| {
-                error!("Failed to send password reset email: {}", e);
+                error!("Failed to send password reset email: {e}");
                 ApiError::new("Failed to send password reset email", ApiErrorType::Internal)
             })?;
 
-        info!("Password reset email sent to: {}", email);
+        info!("Password reset email sent to: {email}");
         Ok(())
     }
 
@@ -364,7 +364,7 @@ impl UserService {
         debug!("Processing password reset");
         validate_password(new_password)
             .map_err(|e| {
-                debug!("Invalid new password: {}", e);
+                debug!("Invalid new password: {e}");
                 ApiError::new(e.to_string(), ApiErrorType::Validation)
             })?;
 
@@ -378,21 +378,21 @@ impl UserService {
 
         let password_hash = hash(new_password.as_bytes(), DEFAULT_COST)
             .map_err(|e| {
-                error!("Failed to hash new password: {}", e);
+                error!("Failed to hash new password: {e}");
                 ApiError::new("Failed to process password", ApiErrorType::Internal)
             })?;
 
         self.repository.update_password(reset_token.user_id, &password_hash)
             .await
             .map_err(|e| {
-                error!("Failed to update password: {}", e);
+                error!("Failed to update password: {e}");
                 ApiError::from(DbError::from(e))
             })?;
 
         self.repository.mark_reset_token_used(token)
             .await
             .map_err(|e| {
-                error!("Failed to mark reset token as used: {}", e);
+                error!("Failed to mark reset token as used: {e}");
                 ApiError::from(DbError::from(e))
             })?;
 
@@ -405,7 +405,7 @@ impl UserService {
                         count, reset_token.user_id);
             },
             Err(e) => {
-                error!("Failed to revoke tokens after password reset: {:?}", e);
+                error!("Failed to revoke tokens after password reset: {e:?}");
             }
         }
 
@@ -414,16 +414,16 @@ impl UserService {
     }
 
     pub async fn resend_verification_email(&self, user_id: Uuid) -> Result<(), ApiError> {
-        debug!("Resending verification email for user: {}", user_id);
+        debug!("Resending verification email for user: {user_id}");
         let user = self.get_user_by_id(user_id).await?;
 
         if user.is_email_verified {
-            debug!("Email already verified for user: {}", user_id);
+            debug!("Email already verified for user: {user_id}");
             return Err(ApiError::new("Email already verified", ApiErrorType::Validation));
         }
 
         let email = user.email.ok_or_else(|| {
-            debug!("No email address found for user: {}", user_id);
+            debug!("No email address found for user: {user_id}");
             ApiError::new("No email address associated with user", ApiErrorType::Validation)
         })?;
 
@@ -436,11 +436,11 @@ impl UserService {
         self.email_service.send_verification_email(&email, &verification_token)
             .await
             .map_err(|e| {
-                error!("Failed to send verification email: {}", e);
+                error!("Failed to send verification email: {e}");
                 ApiError::new("Failed to send verification email", ApiErrorType::Internal)
             })?;
 
-        info!("Successfully resent verification email to: {}", email);
+        info!("Successfully resent verification email to: {email}");
         Ok(())
     }
 }

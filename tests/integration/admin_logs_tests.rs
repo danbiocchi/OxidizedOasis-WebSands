@@ -5,24 +5,17 @@ use actix_web::{test, web, App, http::StatusCode};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use oxidizedoasis_websands::api::routes::admin::logs::{
     get_logs, get_log_settings, update_log_settings
 };
-use oxidizedoasis_websands::core::user::UserRepositoryTrait;
-use oxidizedoasis_websands::core::auth::{AuthService};
-use oxidizedoasis_websands::core::auth::active_token::ActiveTokenService;
-use oxidizedoasis_websands::core::auth::token_revocation::TokenRevocationService;
-use oxidizedoasis_websands::core::email::service::EmailService;
 use oxidizedoasis_websands::infrastructure::config::app_config::AppConfig;
 use oxidizedoasis_websands::infrastructure::middleware::admin_validator;
 use actix_web_httpauth::middleware::HttpAuthentication;
 
 
 use test_common::{
-    create_test_config_with_cleanup, cleanup_test_database, create_test_user, generate_test_token,
-    test_data::*, http::*, env::with_env_vars, mocks::*
+    create_test_config_with_cleanup, cleanup_test_database, generate_test_token, http::*
 };
 
 /// Test structure for updating log settings
@@ -116,7 +109,7 @@ mod admin_logs_retrieval_tests {
         // Debug output to understand the failure
         if status != StatusCode::OK {
             let body = test::read_body(resp).await;
-            println!("❌ Admin logs test failed with status: {:?}", status);
+            println!("❌ Admin logs test failed with status: {status:?}");
             println!("❌ Response body: {:?}", String::from_utf8_lossy(&body));
             
             // Also print token info for debugging
@@ -153,7 +146,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -194,7 +187,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -234,7 +227,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -265,7 +258,7 @@ mod admin_logs_retrieval_tests {
         
         let start_date = "2024-01-01T00:00:00Z";
         let end_date = "2024-12-31T23:59:59Z";
-        let req = create_auth_request("GET", &format!("/api/admin/logs?start_date={}&end_date={}", start_date, end_date), &fixture.test_admin_token)
+        let req = create_auth_request("GET", &format!("/api/admin/logs?start_date={start_date}&end_date={end_date}"), &fixture.test_admin_token)
             .to_request();
 
         // Use the standardized service creation - eliminates 50+ lines of setup
@@ -276,7 +269,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -316,7 +309,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -357,7 +350,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -397,7 +390,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -435,7 +428,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -472,7 +465,7 @@ mod admin_logs_retrieval_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -514,7 +507,7 @@ mod admin_log_settings_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -564,7 +557,7 @@ mod admin_log_settings_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -602,7 +595,7 @@ mod admin_log_settings_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -651,7 +644,7 @@ mod admin_log_settings_update_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -699,7 +692,7 @@ mod admin_log_settings_update_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -751,7 +744,7 @@ mod admin_log_settings_update_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -798,7 +791,7 @@ mod admin_log_settings_update_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -845,7 +838,7 @@ mod admin_log_settings_update_tests {
 
         let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(user_handler))
                 .app_data(web::Data::new(fixture.config.clone()))
@@ -895,7 +888,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
@@ -947,7 +940,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
@@ -997,7 +990,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
@@ -1047,7 +1040,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
@@ -1094,7 +1087,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))
@@ -1137,7 +1130,7 @@ mod admin_log_settings_update_tests {
 
             let admin_auth = HttpAuthentication::bearer(admin_validator);
 
-            let mut app = test::init_service(
+            let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(user_handler))
                     .app_data(web::Data::new(fixture.config.clone()))

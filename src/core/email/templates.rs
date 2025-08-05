@@ -37,19 +37,19 @@ impl EmailTemplate {
                                                         <rect fill="hsl(221, 83%, 53%)" x="100" y="5" width="10" height="10"/>
                                                     </g>
                                                     <text x="100" y="80" text-anchor="middle" 
-                                                          style="font-family: Arial; font-size: 16px; fill: hsl(221, 83%, 53%); letter-spacing: 2px;">{1}</text>
+                                                          style="font-family: Arial; font-size: 16px; fill: hsl(221, 83%, 53%); letter-spacing: 2px;">{app_name}</text>
                                                 </svg>
                                                 <h1 style="color: hsl(221, 83%, 53%); margin: 20px 0; font-size: 24px; font-weight: normal;">Verify Your Email</h1>
-                                                <p style="color: hsl(0, 0%, 100%); margin: 0 0 30px 0; line-height: 24px;">Thank you for signing up with {1}! Please click the button below to verify your email address:</p>
+                                                <p style="color: hsl(0, 0%, 100%); margin: 0 0 30px 0; line-height: 24px;">Thank you for signing up with {app_name}! Please click the button below to verify your email address:</p>
                                                 <table cellpadding="0" cellspacing="0" style="margin: 30px 0;">
                                                     <tr>
                                                         <td style="background-color: hsl(221, 83%, 53%); border-radius: 4px;">
-                                                            <a href="{0}" style="display: block; padding: 15px 30px; color: hsl(210, 25%, 8%); text-decoration: none; font-weight: bold;">Verify Email</a>
+                                                            <a href="{verification_url}" style="display: block; padding: 15px 30px; color: hsl(210, 25%, 8%); text-decoration: none; font-weight: bold;">Verify Email</a>
                                                         </td>
                                                     </tr>
                                                 </table>
                                                 <p style="color: hsl(0, 0%, 80%); margin: 0 0 10px 0; font-size: 14px;">If the button doesn't work, you can copy and paste the following link into your browser:</p>
-                                                <p style="background-color: hsl(210, 12%, 19%); padding: 15px; border-radius: 4px; word-break: break-all; margin: 0 0 20px 0;"><a href="{0}" style="color: hsl(221, 83%, 53%); text-decoration: none;">{0}</a></p>
+                                                <p style="background-color: hsl(210, 12%, 19%); padding: 15px; border-radius: 4px; word-break: break-all; margin: 0 0 20px 0;"><a href="{verification_url}" style="color: hsl(221, 83%, 53%); text-decoration: none;">{verification_url}</a></p>
                                                 <p style="color: hsl(0, 0%, 60%); margin: 20px 0 0 0; font-size: 14px;">This link will expire in 24 hours.</p>
                                                 <p style="color: hsl(0, 0%, 60%); margin: 10px 0 0 0; font-size: 14px;">If you didn't sign up for an account, you can safely ignore this email.</p>
                                             </td>
@@ -60,9 +60,7 @@ impl EmailTemplate {
                         </table>
                     </body>
                     </html>
-                    "#,
-                    verification_url,
-                    app_name
+                    "#
                 )
             }
             EmailTemplate::PasswordReset { reset_url, app_name } => {
@@ -90,20 +88,20 @@ impl EmailTemplate {
                                                         <rect fill="hsl(221, 83%, 53%)" x="100" y="5" width="10" height="10"/>
                                                     </g>
                                                     <text x="100" y="80" text-anchor="middle" 
-                                                          style="font-family: Arial; font-size: 16px; fill: hsl(221, 83%, 53%); letter-spacing: 2px;">{1}</text>
+                                                          style="font-family: Arial; font-size: 16px; fill: hsl(221, 83%, 53%); letter-spacing: 2px;">{app_name}</text>
                                                 </svg>
                                                 
                                                 <h1 style="color: hsl(221, 83%, 53%); margin: 20px 0; font-size: 24px; font-weight: normal;">Reset Your Password</h1>
-                                                <p style="color: hsl(0, 0%, 100%); margin: 0 0 30px 0; line-height: 24px;">We received a request to reset your {1} password. Click the button below to choose a new password:</p>
+                                                <p style="color: hsl(0, 0%, 100%); margin: 0 0 30px 0; line-height: 24px;">We received a request to reset your {app_name} password. Click the button below to choose a new password:</p>
                                                 <table cellpadding="0" cellspacing="0" style="margin: 30px 0;">
                                                     <tr>
                                                         <td style="background-color: hsl(221, 83%, 53%); border-radius: 4px;">
-                                                            <a href="{0}" style="display: block; padding: 15px 30px; color: hsl(210, 25%, 8%); text-decoration: none; font-weight: bold;">Reset Password</a>
+                                                            <a href="{reset_url}" style="display: block; padding: 15px 30px; color: hsl(210, 25%, 8%); text-decoration: none; font-weight: bold;">Reset Password</a>
                                                         </td>
                                                     </tr>
                                                 </table>
                                                 <p style="color: hsl(0, 0%, 80%); margin: 0 0 10px 0; font-size: 14px;">If the button doesn't work, you can copy and paste the following link into your browser:</p>
-                                                <p style="background-color: hsl(210, 12%, 19%); padding: 15px; border-radius: 4px; word-break: break-all; margin: 0 0 20px 0;"><a href="{0}" style="color: hsl(221, 83%, 53%); text-decoration: none;">{0}</a></p>
+                                                <p style="background-color: hsl(210, 12%, 19%); padding: 15px; border-radius: 4px; word-break: break-all; margin: 0 0 20px 0;"><a href="{reset_url}" style="color: hsl(221, 83%, 53%); text-decoration: none;">{reset_url}</a></p>
                                                 <p style="color: hsl(0, 0%, 60%); margin: 20px 0 0 0; font-size: 14px;">This link will expire in 1 hour for security reasons.</p>
                                                 <p style="color: hsl(0, 0%, 60%); margin: 10px 0 0 0; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
                                             </td>
@@ -114,9 +112,7 @@ impl EmailTemplate {
                         </table>
                     </body>
                     </html>
-                    "#,
-                    reset_url,
-                    app_name
+                    "#
                 )
             }
         }

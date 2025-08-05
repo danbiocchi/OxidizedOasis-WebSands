@@ -163,15 +163,15 @@ impl TokenRevocationServiceTrait for TokenRevocationService {
                     
                     // Remove all active tokens for the user
                     if let Err(e) = active_service.remove_all_user_tokens(user_id).await {
-                        error!("Failed to remove active tokens for user {}: {:?}", user_id, e);
+                        error!("Failed to remove active tokens for user {user_id}: {e:?}");
                     }
                 },
                 Err(e) => {
-                    error!("Failed to get active tokens for user {}: {:?}", user_id, e);
+                    error!("Failed to get active tokens for user {user_id}: {e:?}");
                 }
             }
         } else {
-            warn!("Active token service not available, cannot revoke all tokens for user {}", user_id);
+            warn!("Active token service not available, cannot revoke all tokens for user {user_id}");
         }
         
         Ok(revoked_count)

@@ -105,7 +105,7 @@ pub async fn create_incident(
         id: Uuid::new_v4(),
         title: req.title.clone(),
         description: req.description.clone(),
-        severity: req.severity.clone(),
+        severity: req.severity,
         status: IncidentStatus::Open,
         reported_by: claims.into_inner().sub,
         assigned_to: req.assigned_to,

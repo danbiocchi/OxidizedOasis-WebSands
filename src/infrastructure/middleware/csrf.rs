@@ -1,12 +1,11 @@
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    error::ErrorForbidden,
     FromRequest,
     http::Method, Error, HttpMessage, HttpRequest,
 };
 use futures_util::future::{ok, ready, LocalBoxFuture, Ready};
 use log::warn;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 
@@ -16,12 +15,23 @@ pub struct CsrfToken {
     pub token: String,
 }
 
+impl Default for CsrfToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CsrfToken {
     pub fn new() -> Self {
-        let token: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(32)
-            .map(char::from)
+        let mut rng = rand::rng();
+        let token: String = (0..32)
+            .map(|_| {
+                const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                                        abcdefghijklmnopqrstuvwxyz\
+                                        0123456789";
+                let idx = rng.random_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
             .collect();
         Self { token }
     }
@@ -98,7 +108,7 @@ where
             (Some(header), Some(cookie)) => {
                 let valid = header == cookie;
                 if !valid {
-                    warn!("CSRF token mismatch: header={}, cookie={}", header, cookie);
+                    warn!("CSRF token mismatch: header={header}, cookie={cookie}");
                 }
                 valid
             },

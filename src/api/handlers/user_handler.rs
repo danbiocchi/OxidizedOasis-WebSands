@@ -80,7 +80,7 @@ impl UserHandler {
                         }))
                     },
                     Err(e) => {
-                        error!("Failed to create user: {:?}", e);
+                        error!("Failed to create user: {e:?}");
                         HttpResponse::BadRequest().json(json!({
                             "success": false,
                             "message": e.to_string(),
@@ -90,8 +90,8 @@ impl UserHandler {
                 }
             },
             Err(validation_errors) => {
-                error!("Validation failed for create_user: {:?}", validation_errors);
-                let combined_message = format!("Validation error: {:?}", validation_errors);
+                error!("Validation failed for create_user: {validation_errors:?}");
+                let combined_message = format!("Validation error: {validation_errors:?}");
                 
                 HttpResponse::BadRequest().json(json!({
                     "success": false,
@@ -177,7 +177,7 @@ impl UserHandler {
                         }))
                     },
                     _ => {
-                        error!("Login error: {:?}", e);
+                        error!("Login error: {e:?}");
                         HttpResponse::Unauthorized().json(json!({
                             "success": false,
                             "message": "Invalid username or password",
@@ -204,7 +204,7 @@ impl UserHandler {
                     .finish())
             },
             Err(e) => {
-                error!("Email verification failed: {:?}", e);
+                error!("Email verification failed: {e:?}");
                 Ok(HttpResponse::BadRequest().json(json!({
                     "success": false,
                     "message": "The verification link is invalid or has expired",
@@ -246,7 +246,7 @@ impl UserHandler {
                         }
                     })),
                     Err(e) => {
-                        error!("Failed to fetch user: {:?}", e);
+                        error!("Failed to fetch user: {e:?}");
                         HttpResponse::NotFound().json(json!({
                             "success": false,
                             "message": "User not found",
@@ -256,7 +256,7 @@ impl UserHandler {
                 }
             },
             Err(e) => {
-                warn!("Invalid token: {:?}", e);
+                warn!("Invalid token: {e:?}");
                 HttpResponse::Unauthorized().json(json!({
                     "success": false,
                     "message": "Invalid token",
@@ -288,7 +288,7 @@ impl UserHandler {
                         }
                     })),
                     Err(e) => {
-                        error!("Failed to fetch current user: {:?}", e);
+                        error!("Failed to fetch current user: {e:?}");
                         HttpResponse::NotFound().json(json!({
                             "success": false,
                             "message": "User not found",
@@ -298,7 +298,7 @@ impl UserHandler {
                 }
             },
             Err(e) => {
-                warn!("Invalid token: {:?}", e);
+                warn!("Invalid token: {e:?}");
                 HttpResponse::Unauthorized().json(json!({
                     "success": false,
                     "message": "Invalid token",
@@ -314,7 +314,7 @@ impl UserHandler {
     ) -> impl Responder {
         // Get claims from request extensions (added by CookieAuthMiddleware)
         if let Some(claims) = req.extensions().get::<Claims>() {
-            debug!("Found claims in request extensions: {:?}", claims);
+            debug!("Found claims in request extensions: {claims:?}");
    
        
             match self.user_service.get_user_by_id(claims.sub).await {
@@ -334,7 +334,7 @@ impl UserHandler {
                     "csrf_token": req.cookie("csrf_token").map(|c| c.value().to_string())
                 })),
                 Err(e) => {
-                    error!("Failed to fetch current user from cookie: {:?}", e);
+                    error!("Failed to fetch current user from cookie: {e:?}");
                     HttpResponse::NotFound().json(json!({
                         "success": false,
                         "message": "User not found",
@@ -384,7 +384,7 @@ impl UserHandler {
                         }
                     })),
                     Err(e) => {
-                        error!("Failed to update user {}: {:?}", user_id, e);
+                        error!("Failed to update user {user_id}: {e:?}");
                         match e.error_type {
                             ApiErrorType::NotFound => HttpResponse::NotFound().json(json!({
                                 "success": false,
@@ -444,7 +444,7 @@ impl UserHandler {
                 }))
             },
             Err(e) => {
-                error!("Password reset request failed: {:?}", e);
+                error!("Password reset request failed: {e:?}");
                 // Return success even on error to prevent email enumeration
                 HttpResponse::Ok().json(json!({
                     "success": true,
@@ -469,7 +469,7 @@ impl UserHandler {
                     .finish())
             },
             Err(e) => {
-                error!("Password reset token verification failed: {:?}", e);
+                error!("Password reset token verification failed: {e:?}");
                 Ok(HttpResponse::BadRequest().json(json!({
                     "success": false,
                     "message": "The password reset link is invalid or has expired",
@@ -502,7 +502,7 @@ impl UserHandler {
                 }))
             },
             Err(e) => {
-                error!("Password reset failed: {:?}", e);
+                error!("Password reset failed: {e:?}");
                 HttpResponse::BadRequest().json(json!({
                     "success": false,
                     "message": e.to_string(),
@@ -533,7 +533,7 @@ impl UserHandler {
                         "message": "User deleted successfully"
                     })),
                     Err(e) => {
-                        error!("Failed to delete user: {:?}", e);
+                        error!("Failed to delete user: {e:?}");
                         HttpResponse::InternalServerError().json(json!({
                             "success": false,
                             "message": "Failed to delete user",
@@ -613,7 +613,7 @@ impl UserHandler {
                 }))
             },
             Err(e) => {
-                error!("Failed to refresh token: {:?}", e);
+                error!("Failed to refresh token: {e:?}");
                 HttpResponse::Unauthorized().json(json!({
                     "success": false,
                     "message": "Invalid refresh token",
@@ -731,7 +731,7 @@ impl UserHandler {
                 }))
             },
             Err(e) => {
-                error!("Failed to logout: {:?}", e);
+                error!("Failed to logout: {e:?}");
                 HttpResponse::InternalServerError().json(json!({
                     "success": false,
                     "message": "Failed to logout",
@@ -807,7 +807,7 @@ impl UserHandler {
                 }))
             },
             Err(e) => {
-                error!("Failed to logout: {:?}", e);
+                error!("Failed to logout: {e:?}");
                 HttpResponse::InternalServerError().json(json!({
                     "success": false,
                     "message": "Failed to logout",
