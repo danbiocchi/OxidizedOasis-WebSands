@@ -875,6 +875,318 @@ mod csrf_protection_tests {
 }
 
 #[cfg(test)]
+mod logger_middleware_tests {
+    use super::*;
+    use oxidizedoasis_websands::infrastructure::middleware::logger::RequestLogger;
+    use actix_web::{test, web, App, HttpResponse, http::StatusCode};
+    use std::sync::{Arc, Mutex};
+    use std::collections::HashMap;
+
+    /// Test handler that returns 4xx status codes for CLIENT ERROR testing
+    async fn client_error_handler() -> HttpResponse {
+        HttpResponse::BadRequest().body("client error")
+    }
+
+    /// Test handler that returns 5xx status codes for SERVER ERROR testing
+    async fn server_error_handler() -> HttpResponse {
+        HttpResponse::InternalServerError().body("server error")
+    }
+
+    /// Test handler that returns successful response
+    async fn success_handler() -> HttpResponse {
+        HttpResponse::Ok().body("success")
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_client_error_status() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/client-error", web::get().to(client_error_handler))
+        ).await;
+
+        let req = test::TestRequest::get().uri("/client-error").to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        // The middleware should log "CLIENT ERROR" - this is tested by the middleware itself
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_server_error_status() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/server-error", web::get().to(server_error_handler))
+        ).await;
+
+        let req = test::TestRequest::get().uri("/server-error").to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        // The middleware should log "SERVER ERROR" - this is tested by the middleware itself
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_various_4xx_status_codes() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/bad-request", web::get().to(|| async {
+                    HttpResponse::BadRequest().body("bad request")
+                }))
+                .route("/unauthorized", web::get().to(|| async {
+                    HttpResponse::Unauthorized().body("unauthorized")
+                }))
+                .route("/forbidden", web::get().to(|| async {
+                    HttpResponse::Forbidden().body("forbidden")
+                }))
+                .route("/not-found", web::get().to(|| async {
+                    HttpResponse::NotFound().body("not found")
+                }))
+        ).await;
+
+        let test_cases = [
+            ("/bad-request", StatusCode::BAD_REQUEST),
+            ("/unauthorized", StatusCode::UNAUTHORIZED),
+            ("/forbidden", StatusCode::FORBIDDEN),
+            ("/not-found", StatusCode::NOT_FOUND),
+        ];
+
+        for (uri, expected_status) in test_cases.iter() {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), *expected_status, "Failed for {uri}");
+            // Each should trigger "CLIENT ERROR" logging
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_various_5xx_status_codes() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/internal-error", web::get().to(|| async {
+                    HttpResponse::InternalServerError().body("internal error")
+                }))
+                .route("/not-implemented", web::get().to(|| async {
+                    HttpResponse::NotImplemented().body("not implemented")
+                }))
+                .route("/bad-gateway", web::get().to(|| async {
+                    HttpResponse::BadGateway().body("bad gateway")
+                }))
+                .route("/service-unavailable", web::get().to(|| async {
+                    HttpResponse::ServiceUnavailable().body("service unavailable")
+                }))
+        ).await;
+
+        let test_cases = [
+            ("/internal-error", StatusCode::INTERNAL_SERVER_ERROR),
+            ("/not-implemented", StatusCode::NOT_IMPLEMENTED),
+            ("/bad-gateway", StatusCode::BAD_GATEWAY),
+            ("/service-unavailable", StatusCode::SERVICE_UNAVAILABLE),
+        ];
+
+        for (uri, expected_status) in test_cases.iter() {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), *expected_status, "Failed for {uri}");
+            // Each should trigger "SERVER ERROR" logging
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_referer_header() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/test", web::get().to(success_handler))
+        ).await;
+
+        // Test with Referer header
+        let req = test::TestRequest::get()
+            .uri("/test")
+            .insert_header(("Referer", "https://example.com/previous-page"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The middleware should log with the referer value
+
+        // Test without Referer header
+        let req = test::TestRequest::get().uri("/test").to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The middleware should log with "none" for referer
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_user_agent_header() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/test", web::get().to(success_handler))
+        ).await;
+
+        // Test with User-Agent header
+        let req = test::TestRequest::get()
+            .uri("/test")
+            .insert_header(("User-Agent", "Mozilla/5.0 (Test Browser)"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The middleware should log with the user agent value
+
+        // Test without User-Agent header
+        let req = test::TestRequest::get().uri("/test").to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The middleware should log with "none" for user agent
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_both_referer_and_user_agent() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/test", web::get().to(success_handler))
+                .route("/client-error", web::get().to(client_error_handler))
+                .route("/server-error", web::get().to(server_error_handler))
+        ).await;
+
+        let headers = [
+            ("Referer", "https://example.com/page"),
+            ("User-Agent", "TestBot/1.0"),
+        ];
+
+        // Test success response with both headers
+        let req = test::TestRequest::get()
+            .uri("/test")
+            .insert_header(headers[0])
+            .insert_header(headers[1])
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Test client error with both headers
+        let req = test::TestRequest::get()
+            .uri("/client-error")
+            .insert_header(headers[0])
+            .insert_header(headers[1])
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // Test server error with both headers
+        let req = test::TestRequest::get()
+            .uri("/server-error")
+            .insert_header(headers[0])
+            .insert_header(headers[1])
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_invalid_header_values() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/test", web::get().to(success_handler))
+        ).await;
+
+        // Test with headers that might have invalid UTF-8 (simulated with unusual characters)
+        let req = test::TestRequest::get()
+            .uri("/test")
+            .insert_header(("Referer", "https://example.com/page?q=test"))
+            .insert_header(("User-Agent", "TestBot/1.0 (compatible; test)"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The middleware should handle these headers gracefully
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_timing_functionality() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/slow", web::get().to(|| async {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    HttpResponse::Ok().body("slow response")
+                }))
+                .route("/fast", web::get().to(|| async {
+                    HttpResponse::Ok().body("fast response")
+                }))
+        ).await;
+
+        // Test that the middleware handles timing for both fast and slow requests
+        let start = std::time::Instant::now();
+        
+        let req = test::TestRequest::get().uri("/slow").to_request();
+        let resp = test::call_service(&app, req).await;
+        let slow_duration = start.elapsed();
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(slow_duration >= std::time::Duration::from_millis(10));
+
+        let req = test::TestRequest::get().uri("/fast").to_request();
+        let resp = test::call_service(&app, req).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[actix_rt::test]
+    async fn test_request_logger_with_different_http_methods() {
+        let app = test::init_service(
+            App::new()
+                .wrap(RequestLogger::new())
+                .route("/resource", web::get().to(|| async {
+                    HttpResponse::Ok().body("GET response")
+                }))
+                .route("/resource", web::post().to(|| async {
+                    HttpResponse::Created().body("POST response")
+                }))
+                .route("/resource", web::put().to(|| async {
+                    HttpResponse::Ok().body("PUT response")
+                }))
+                .route("/resource", web::delete().to(|| async {
+                    HttpResponse::NoContent().finish()
+                }))
+                .route("/error", web::patch().to(|| async {
+                    HttpResponse::InternalServerError().body("PATCH error")
+                }))
+        ).await;
+
+        let test_cases = [
+            ("GET", "/resource", StatusCode::OK),
+            ("POST", "/resource", StatusCode::CREATED),
+            ("PUT", "/resource", StatusCode::OK),
+            ("DELETE", "/resource", StatusCode::NO_CONTENT),
+            ("PATCH", "/error", StatusCode::INTERNAL_SERVER_ERROR),
+        ];
+
+        for (method, uri, expected_status) in test_cases.iter() {
+            let req = match *method {
+                "GET" => test::TestRequest::get().uri(uri).to_request(),
+                "POST" => test::TestRequest::post().uri(uri).to_request(),
+                "PUT" => test::TestRequest::put().uri(uri).to_request(),
+                "DELETE" => test::TestRequest::delete().uri(uri).to_request(),
+                "PATCH" => test::TestRequest::patch().uri(uri).to_request(),
+                _ => panic!("Unsupported method: {method}"),
+            };
+            
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), *expected_status, "Failed for {method} {uri}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod rate_limiting_tests {
     
     

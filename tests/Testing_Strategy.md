@@ -40,6 +40,14 @@ project-root/
         └── README.md
 ```
 
+## Environment Configuration
+
+**Important**: This project uses separate environment files for different contexts:
+- **`.env`**: Production environment configuration
+- **`.env.test`**: Testing environment configuration (used during test execution)
+
+The testing infrastructure automatically loads `.env.test` during test runs, which contains test-specific configurations including database connections, JWT settings, and email configurations. This separation ensures that tests run with appropriate settings isolated from production values.
+
 ## Key Components and Configuration
 
 ### 1. Test Suite Organization

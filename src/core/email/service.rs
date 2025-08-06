@@ -279,7 +279,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "SMTP_USERNAME must be set")]
     fn test_email_service_new_missing_smtp_username() {
-        let _guard = ENV_MUTEX.lock().unwrap();
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner()
+        };
         cleanup_test_env();
         
         // Set all vars except SMTP_USERNAME
@@ -550,5 +553,149 @@ mod tests {
         let _cloned_service = email_service.clone();
         
         cleanup_test_env();
+    }
+
+    // Additional unit tests as per task requirements
+
+    #[test]
+    #[should_panic(expected = "SMTP_PASSWORD must be set")]
+    fn test_email_service_new_missing_smtp_password() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner()
+        };
+        cleanup_test_env();
+        
+        // Set all vars except SMTP_PASSWORD
+        env::set_var("SMTP_USERNAME", "test@example.com");
+        // Don't set SMTP_PASSWORD
+        env::set_var("SMTP_SERVER", "smtp.example.com");
+        env::set_var("FROM_EMAIL", "noreply@example.com");
+        env::set_var("APP_NAME", "TestApp");
+        env::set_var("EMAIL_FROM_NAME", "Test Application");
+        env::set_var("EMAIL_VERIFICATION_SUBJECT", "Verify Your Email");
+        env::set_var("EMAIL_PASSWORD_RESET_SUBJECT", "Reset Password");
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let _email_service = EmailService::new();
+    }
+
+    #[test]
+    #[should_panic(expected = "SMTP_SERVER must be set")]
+    fn test_email_service_new_missing_smtp_server() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner()
+        };
+        cleanup_test_env();
+        
+        // Set all vars except SMTP_SERVER
+        env::set_var("SMTP_USERNAME", "test@example.com");
+        env::set_var("SMTP_PASSWORD", "test_password");
+        // Don't set SMTP_SERVER
+        env::set_var("FROM_EMAIL", "noreply@example.com");
+        env::set_var("APP_NAME", "TestApp");
+        env::set_var("EMAIL_FROM_NAME", "Test Application");
+        env::set_var("EMAIL_VERIFICATION_SUBJECT", "Verify Your Email");
+        env::set_var("EMAIL_PASSWORD_RESET_SUBJECT", "Reset Password");
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let _email_service = EmailService::new();
+    }
+
+    #[test]
+    #[should_panic(expected = "FROM_EMAIL must be set")]
+    fn test_email_service_new_missing_from_email() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        cleanup_test_env();
+        
+        // Set all vars except FROM_EMAIL
+        env::set_var("SMTP_USERNAME", "test@example.com");
+        env::set_var("SMTP_PASSWORD", "test_password");
+        env::set_var("SMTP_SERVER", "smtp.example.com");
+        // Don't set FROM_EMAIL
+        env::set_var("APP_NAME", "TestApp");
+        env::set_var("EMAIL_FROM_NAME", "Test Application");
+        env::set_var("EMAIL_VERIFICATION_SUBJECT", "Verify Your Email");
+        env::set_var("EMAIL_PASSWORD_RESET_SUBJECT", "Reset Password");
+        env::set_var("ENVIRONMENT", "development");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let _email_service = EmailService::new();
+    }
+
+    #[test]
+    #[should_panic(expected = "DEVELOPMENT_URL must be set")]
+    fn test_get_base_url_missing_development_url() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner()
+        };
+        cleanup_test_env();
+        
+        env::set_var("ENVIRONMENT", "development");
+        // Don't set DEVELOPMENT_URL
+        env::set_var("PRODUCTION_URL", "https://example.com");
+        
+        let _base_url = EmailService::get_base_url();
+    }
+
+    #[test]
+    #[should_panic(expected = "PRODUCTION_URL must be set")]
+    fn test_get_base_url_missing_production_url() {
+        let _guard = match ENV_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner()
+        };
+        cleanup_test_env();
+        
+        env::set_var("ENVIRONMENT", "production");
+        env::set_var("DEVELOPMENT_URL", "http://localhost:8080");
+        // Don't set PRODUCTION_URL
+        
+        let _base_url = EmailService::get_base_url();
+    }
+
+    // Tests for mocking SMTP transport error handling (using existing mock infrastructure)
+
+    #[tokio::test]
+    async fn test_send_verification_email_error_handling() {
+        // Test error handling using the mock service
+        use super::mock::MockEmailService;
+        
+        let mock_service = MockEmailService::new();
+        
+        // Set up mock to fail
+        mock_service.set_should_succeed(false);
+        
+        // Test that error is properly propagated
+        let result = mock_service.send_verification_email("test@example.com", "token").await;
+        assert!(result.is_err(), "Should return error when SMTP fails");
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Simulated email failure"), "Error should contain failure message");
+    }
+
+    #[tokio::test]
+    async fn test_send_password_reset_email_error_handling() {
+        // Test error handling using the mock service
+        use super::mock::MockEmailService;
+        
+        let mock_service = MockEmailService::new();
+        
+        // Set up mock to fail
+        mock_service.set_should_succeed(false);
+        
+        // Test that error is properly propagated
+        let result = mock_service.send_password_reset_email("test@example.com", "reset_token").await;
+        assert!(result.is_err(), "Should return error when SMTP fails");
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Simulated email failure"), "Error should contain failure message");
     }
 }

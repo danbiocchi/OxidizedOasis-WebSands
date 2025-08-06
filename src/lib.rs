@@ -17,6 +17,51 @@ pub use infrastructure::config::app_config::AppConfig;
 pub use infrastructure::database::connection::create_pool;
 pub use infrastructure::database::migrations::run_migrations;
 
+// Main.rs functions for testing
+pub use crate::main_functions::{validate_critical_env_vars, setup_database};
+
+/// Functions from main.rs that need to be tested
+pub mod main_functions {
+    use std::env;
+    use std::time::Duration;
+    use crate::infrastructure::config::app_config::AppConfig;
+    use crate::infrastructure::database::connection::create_pool;
+    use sqlx::postgres::Postgres;
+    use log::{info, warn, error};
+
+    pub fn validate_critical_env_vars() -> Result<(), Box<dyn std::error::Error>> {
+        let required_vars = [
+            "DATABASE_URL",
+            "JWT_SECRET",
+            "SMTP_SERVER",
+            "ADMIN_EMAIL",
+        ];
+        for var in required_vars {
+            if env::var(var).is_err() {
+                return Err(format!("Missing required environment variable: {var}").into());
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn setup_database(config: &AppConfig, run_migrations: bool) -> Result<sqlx::Pool<Postgres>, Box<dyn std::error::Error>> {
+        let pool = create_pool(config).await?;
+        if run_migrations {
+            info!("Running database migrations");
+            match sqlx::migrate!("./migrations").run(&pool).await {
+                Ok(_) => info!("Migrations completed successfully"),
+                Err(e) => {
+                    error!("Migration failed: {e:?}");
+                    return Err(Box::new(e));
+                }
+            }
+        } else {
+            warn!("Skipping database migrations. Ensure your database schema is up to date.");
+        }
+        Ok(pool)
+    }
+}
+
 // Test utilities - available for tests and integration tests
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils {

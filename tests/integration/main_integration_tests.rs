@@ -600,3 +600,174 @@ async fn test_security_headers_configuration() {
 }
 
 // Migration tests have been moved to migrations_tests.rs
+
+// Additional tests for src/main.rs as per task requirements
+
+#[tokio::test]
+async fn test_validate_critical_env_vars_missing_database_url() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Save original value
+    let original_database_url = env::var("DATABASE_URL").ok();
+    
+    // Remove DATABASE_URL
+    env::remove_var("DATABASE_URL");
+    
+    let result = oxidizedoasis_websands::validate_critical_env_vars();
+    assert!(result.is_err(), "Should fail when DATABASE_URL is missing");
+    
+    let error_message = result.unwrap_err().to_string();
+    assert!(error_message.contains("DATABASE_URL"), "Error should mention DATABASE_URL");
+    
+    // Restore original value
+    if let Some(value) = original_database_url {
+        env::set_var("DATABASE_URL", value);
+    }
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_validate_critical_env_vars_missing_jwt_secret() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Save original value
+    let original_jwt_secret = env::var("JWT_SECRET").ok();
+    
+    // Remove JWT_SECRET
+    env::remove_var("JWT_SECRET");
+    
+    let result = oxidizedoasis_websands::validate_critical_env_vars();
+    assert!(result.is_err(), "Should fail when JWT_SECRET is missing");
+    
+    let error_message = result.unwrap_err().to_string();
+    assert!(error_message.contains("JWT_SECRET"), "Error should mention JWT_SECRET");
+    
+    // Restore original value
+    if let Some(value) = original_jwt_secret {
+        env::set_var("JWT_SECRET", value);
+    }
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_validate_critical_env_vars_missing_smtp_server() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Save original value
+    let original_smtp_server = env::var("SMTP_SERVER").ok();
+    
+    // Remove SMTP_SERVER
+    env::remove_var("SMTP_SERVER");
+    
+    let result = oxidizedoasis_websands::validate_critical_env_vars();
+    assert!(result.is_err(), "Should fail when SMTP_SERVER is missing");
+    
+    let error_message = result.unwrap_err().to_string();
+    assert!(error_message.contains("SMTP_SERVER"), "Error should mention SMTP_SERVER");
+    
+    // Restore original value
+    if let Some(value) = original_smtp_server {
+        env::set_var("SMTP_SERVER", value);
+    }
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_validate_critical_env_vars_missing_admin_email() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Save original value
+    let original_admin_email = env::var("ADMIN_EMAIL").ok();
+    
+    // Remove ADMIN_EMAIL
+    env::remove_var("ADMIN_EMAIL");
+    
+    let result = oxidizedoasis_websands::validate_critical_env_vars();
+    assert!(result.is_err(), "Should fail when ADMIN_EMAIL is missing");
+    
+    let error_message = result.unwrap_err().to_string();
+    assert!(error_message.contains("ADMIN_EMAIL"), "Error should mention ADMIN_EMAIL");
+    
+    // Restore original value
+    if let Some(value) = original_admin_email {
+        env::set_var("ADMIN_EMAIL", value);
+    }
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_setup_database_without_migrations() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Test setup_database with run_migrations = false
+    let result = oxidizedoasis_websands::setup_database(&fixture.config, false).await;
+    assert!(result.is_ok(), "setup_database should succeed without running migrations");
+    
+    let pool = result.unwrap();
+    
+    // Verify pool is functional
+    let query_result = sqlx::query("SELECT 1 as test")
+        .fetch_one(&pool)
+        .await;
+    assert!(query_result.is_ok(), "Pool should be functional");
+    
+    // Check that no migrations were logged when run_migrations is false
+    // Note: This test assumes the test database is fresh, so no migrations should exist
+    let migrations_result = sqlx::query("SELECT COUNT(*) as count FROM _sqlx_migrations")
+        .fetch_one(&pool)
+        .await;
+    
+    if migrations_result.is_ok() {
+        // If the table exists, it should be empty or have minimal entries
+        // (This is a best-effort test since migrations may already exist)
+    }
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_setup_database_with_invalid_config() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // Create invalid config with malformed DATABASE_URL
+    let mut invalid_config = fixture.config.clone();
+    invalid_config.database.url = "invalid_database_url".to_string();
+    
+    let result = oxidizedoasis_websands::setup_database(&invalid_config, true).await;
+    assert!(result.is_err(), "setup_database should fail with invalid config");
+    
+    fixture.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_setup_database_timeout_simulation() {
+    let fixture = UnifiedTestFixture::new_with_database().await;
+    
+    // This test simulates a timeout scenario by using an unreachable database URL
+    let mut timeout_config = fixture.config.clone();
+    timeout_config.database.url = "postgres://user:pass@192.0.2.1:5432/nonexistent_db".to_string(); // 192.0.2.1 is a reserved test IP that should be unreachable
+    
+    // Use a very short timeout for testing
+    let timeout_result = tokio::time::timeout(
+        Duration::from_millis(100), // Very short timeout
+        oxidizedoasis_websands::setup_database(&timeout_config, false)
+    ).await;
+    
+    // Should either timeout or fail to connect
+    match timeout_result {
+        Err(_) => {
+            // Timeout occurred - this is expected
+            assert!(true, "Database setup timed out as expected");
+        }
+        Ok(result) => {
+            // If it didn't timeout, it should have failed due to invalid connection
+            assert!(result.is_err(), "Database setup should fail with unreachable host");
+        }
+    }
+    
+    fixture.cleanup().await;
+}

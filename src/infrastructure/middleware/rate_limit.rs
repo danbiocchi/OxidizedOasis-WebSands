@@ -226,7 +226,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, web, App, HttpResponse};
+    use actix_web::{test, web, App, HttpResponse, http::StatusCode};
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::time::{sleep, Duration};
     use serde_json::Value;

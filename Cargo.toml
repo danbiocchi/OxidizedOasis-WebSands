@@ -76,6 +76,10 @@ name = "admin_security_tests"
 path = "tests/integration/admin_security_tests.rs"
 
 [[test]]
+name = "auth_integration_tests"
+path = "tests/integration/auth_integration_tests.rs"
+
+[[test]]
 name = "admin_user_management_tests"
 path = "tests/integration/admin_user_management_tests.rs"
 
@@ -127,3 +131,26 @@ path = "tests/integration/user_crud_tests.rs"
 name = "user_tests"
 path = "tests/integration/user_tests.rs"
 
+[[test]]
+name = "database_connection_tests"
+path = "tests/integration/database_connection_tests.rs"
+
+[[test]]
+name = "active_token_tests"
+path = "tests/integration/active_token_tests.rs"
+
+[[test]]
+name = "user_repository_tests"
+path = "tests/integration/user_repository_tests.rs"
+
+[[test]]
+name = "user_handler_tests"
+path = "tests/integration/user_handler_tests.rs"
+
+[[test]]
+name = "auth_service_tests"
+path = "tests/integration/auth_service_tests.rs"
+
+[[test]]
+name = "user_service_tests"
+path = "tests/integration/user_service_tests.rs"
