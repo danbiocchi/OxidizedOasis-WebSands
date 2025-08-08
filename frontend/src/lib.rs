@@ -26,7 +26,9 @@ pub fn run_app() -> Result<(), JsValue> {
 
 #[function_component(App)]
 fn app() -> Html {
-    let is_authenticated = use_state(|| services::auth::is_authenticated());
+    let initial_auth_state = services::auth::is_authenticated();
+    
+    let is_authenticated = use_state(|| initial_auth_state);
     let set_auth = {
         let is_authenticated = is_authenticated.clone();
         Callback::from(move |auth: bool| {

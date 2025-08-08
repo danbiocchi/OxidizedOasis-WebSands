@@ -83,7 +83,6 @@ pub fn is_authenticated() -> bool {
     // First check if we have a CSRF token
     let has_csrf = get_csrf_token().is_some();
     if !has_csrf {
-        log!("🔍 AUTH DEBUG: No CSRF token found");
         return false;
     }
 
@@ -91,22 +90,17 @@ pub fn is_authenticated() -> bool {
     let cached_result = SESSION_VALIDATION_STATE.with(|state| *state.borrow());
     
     match cached_result {
-        Some(is_valid) => {
-            log!("🔍 AUTH DEBUG: Using cached validation result: {}", is_valid);
-            is_valid
-        }
+        Some(is_valid) => is_valid,
         None => {
             // No cached result - trigger async validation if not already in progress
             let validation_in_progress = VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow());
             
             if !validation_in_progress {
-                log!("🔍 AUTH DEBUG: Starting async session validation");
                 validate_session_async();
             }
             
-            // For now, assume authenticated (optimistic rendering)
-            // The validation will update the state and trigger re-renders as needed
-            log!("🔍 AUTH DEBUG: Optimistically assuming authenticated while validating");
+            // Return optimistic true if we have CSRF token to prevent redirect loops
+            // This allows the ProtectedRoute validation to handle the actual security
             true
         }
     }
@@ -114,12 +108,9 @@ pub fn is_authenticated() -> bool {
 
 // Asynchronous session validation function
 pub async fn validate_session() -> bool {
-    log!("🔍 AUTH DEBUG: Starting server-side session validation");
-    
     // Check if we have a CSRF token first
     let has_csrf = get_csrf_token().is_some();
     if !has_csrf {
-        log!("🔍 AUTH DEBUG: No CSRF token - session invalid");
         update_validation_state(false);
         return false;
     }
@@ -128,12 +119,10 @@ pub async fn validate_session() -> bool {
     // Using the /me endpoint as it requires authentication
     match make_validation_request().await {
         Ok(_) => {
-            log!("🔍 AUTH DEBUG: Server validation successful");
             update_validation_state(true);
             true
         }
-        Err(e) => {
-            log!("🔍 AUTH DEBUG: Server validation failed: {}", e);
+        Err(_) => {
             cleanup_stale_tokens();
             update_validation_state(false);
             false
@@ -166,8 +155,13 @@ async fn make_validation_request() -> Result<(), String> {
 
 // Update validation state and clear progress flag
 fn update_validation_state(is_valid: bool) {
-    SESSION_VALIDATION_STATE.with(|state| *state.borrow_mut() = Some(is_valid));
-    VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = false);
+    SESSION_VALIDATION_STATE.with(|state| {
+        *state.borrow_mut() = Some(is_valid);
+    });
+    
+    VALIDATION_IN_PROGRESS.with(|progress| {
+        *progress.borrow_mut() = false;
+    });
 }
 
 // Start async validation without blocking
@@ -181,14 +175,18 @@ fn validate_session_async() {
 
 // Function to clean up stale tokens when validation fails
 fn cleanup_stale_tokens() {
-    log!("🔍 AUTH DEBUG: Cleaning up stale tokens");
     remove_tokens();
 }
 
 // Function to reset validation state (call this after login/logout)
 pub fn reset_validation_state() {
-    log!("🔍 AUTH DEBUG: Resetting validation state");
     SESSION_VALIDATION_STATE.with(|state| *state.borrow_mut() = None);
+    VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = false);
+}
+
+// Function to force set authentication state (used after successful login)
+pub fn set_authenticated_state(is_authenticated: bool) {
+    SESSION_VALIDATION_STATE.with(|state| *state.borrow_mut() = Some(is_authenticated));
     VALIDATION_IN_PROGRESS.with(|progress| *progress.borrow_mut() = false);
 }
 
@@ -315,8 +313,8 @@ pub fn store_csrf_token_from_response(data: &serde_json::Value) {
         }
     }
     
-    // Reset validation state after successful login
-    reset_validation_state();
+    // 🔧 FIX: Set authenticated state immediately after login
+    set_authenticated_state(true);
     
     // Try to extract access token for expiry calculation
     if let Some(access_token) = data.get("data")
@@ -359,8 +357,8 @@ pub fn logout() {
     // Remove CSRF token from local storage
     remove_tokens();
     
-    // Reset validation state
-    reset_validation_state();
+    // 🔧 FIX: Set unauthenticated state immediately after logout
+    set_authenticated_state(false);
 }
 
 // Refresh access token using refresh token

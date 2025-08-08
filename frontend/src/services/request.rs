@@ -90,28 +90,13 @@ pub trait RequestBuilderExt {
 impl RequestBuilderExt for Request {
     fn send_with_retry(self) -> Pin<Box<dyn Future<Output = Result<Response, String>>>> {
         Box::pin(async move {
-            gloo::console::log!("🔍 DEBUG: RequestInterceptor Request Attempt");
-            gloo::console::log!("🔍 DEBUG: Request URL:", &self.url().to_string());
-            gloo::console::log!("🔍 DEBUG: Request Method:", &self.method().as_str().to_string());
-            
-            // Check if we have auth tokens before sending
-            let has_access_token = crate::services::auth::get_auth_token().is_some();
-            let has_csrf_token = crate::services::auth::get_csrf_token().is_some();
-            gloo::console::log!("🔍 DEBUG: Has access token:", has_access_token);
-            gloo::console::log!("🔍 DEBUG: Has CSRF token:", has_csrf_token);
-            
             // First attempt
             let response = self.send().await.map_err(|e| {
-                gloo::console::log!("🔍 DEBUG: Request failed with error:", &e.to_string());
                 e.to_string()
             })?;
             
-            gloo::console::log!("🔍 DEBUG: Response status:", response.status());
-            gloo::console::log!("🔍 DEBUG: Response headers:", format!("{:?}", response.headers()));
-            
             // If unauthorized, try to refresh token and retry
             if response.status() == 401 || response.status() == 403 {
-                gloo::console::log!("RequestInterceptor: Got 401/403, attempting token refresh");
                 log!("Request failed with status: {}, attempting token refresh", response.status());
                 
                 // Try to refresh the token
@@ -172,27 +157,23 @@ impl RequestBuilderExt for Request {
 impl RequestBuilderExt for RequestBuilder {
     fn send_with_retry(self) -> Pin<Box<dyn Future<Output = Result<Response, String>>>> {
         Box::pin(async move {
-            gloo::console::log!("🔍 DEBUG: RequestBuilder Request Attempt");
             
-            // Check if we have auth tokens before sending
-            let has_access_token = crate::services::auth::get_auth_token().is_some();
-            let has_csrf_token = crate::services::auth::get_csrf_token().is_some();
-            gloo::console::log!("🔍 DEBUG: Has access token:", has_access_token);
-            gloo::console::log!("🔍 DEBUG: Has CSRF token:", has_csrf_token);
+            
+            
             
             // First attempt
             let response = self.send().await.map_err(|e| {
-                gloo::console::log!("🔍 DEBUG: RequestBuilder failed with error:", &e.to_string());
+                
                 e.to_string()
             })?;
             
-            gloo::console::log!("🔍 DEBUG: RequestBuilder Response status:", response.status());
+            
             gloo::console::log!("�� DEBUG: RequestBuilder Response headers:", format!("{:?}", response.headers()));
             
             // If unauthorized, try to refresh token and retry
             if response.status() == 401 || response.status() == 403 {
-                gloo::console::log!("🔍 DEBUG: Got 401/403, attempting token refresh");
-                log!("🔍 DEBUG: Request failed with status: {}, attempting token refresh", response.status());
+                
+                log!("Request failed with status: {}, attempting token refresh", response.status());
                 
                 // Try to refresh the token
                 match auth::refresh_access_token().await {

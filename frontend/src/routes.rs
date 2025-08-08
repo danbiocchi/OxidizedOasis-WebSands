@@ -7,7 +7,7 @@ use crate::pages::{
 };
 use crate::services::auth::{is_authenticated, validate_session};
 
-#[derive(Clone, Routable, PartialEq)]
+#[derive(Clone, Routable, PartialEq, Debug)]
 pub enum Route {
     #[at("/")]
     Home,
@@ -52,15 +52,14 @@ fn protected_route(props: &ProtectedRouteProps) -> Html {
         let validation_state = validation_state_clone.clone();
         let is_validating = is_validating_clone.clone();
 
-        if is_authenticated() && !*is_validating {
+        // Always start validation if we don't have a cached result
+        if *validation_state == None && !*is_validating {
             is_validating.set(true);
             spawn_local(async move {
                 let is_valid = validate_session().await;
                 validation_state.set(Some(is_valid));
                 is_validating.set(false);
             });
-        } else if !is_authenticated() {
-            validation_state.set(Some(false));
         }
         || {}
     });
@@ -82,22 +81,18 @@ fn protected_route(props: &ProtectedRouteProps) -> Html {
             }
         }
         (None, true) => {
-            // Still validating, show loading or render optimistically
+            // Still validating, show loading
             html! {
                 <div class="auth-validating">
                     <p>{"Validating session..."}</p>
-                    { for props.children.iter() }
                 </div>
             }
         }
         (None, false) => {
-            // Not authenticated and not validating
+            // Don't redirect immediately - show loading while validation starts
             html! {
-                <div class="auth-redirect">
-                    <p>{"Please log in to access this page."}</p>
-                    <script>
-                        {"window.location.href = '/login';"}
-                    </script>
+                <div class="auth-validating">
+                    <p>{"Checking authentication..."}</p>
                 </div>
             }
         }
@@ -109,18 +104,8 @@ pub fn switch(routes: Route) -> Html {
         Route::Home => html! { <Home /> },
         Route::About => html! { <About /> },
         Route::Login => {
-            // If already authenticated, redirect to dashboard
-            if is_authenticated() {
-                html! {
-                    <div class="auth-redirect">
-                        <script>
-                            {"window.location.href = '/dashboard';"}
-                        </script>
-                    </div>
-                }
-            } else {
-                html! { <Login /> }
-            }
+            // Simply render the login page - let the login component handle authentication checks
+            html! { <Login /> }
         },
         Route::Dashboard => {
             html! {
@@ -130,18 +115,8 @@ pub fn switch(routes: Route) -> Html {
             }
         },
         Route::Register => {
-            // If already authenticated, redirect to dashboard
-            if is_authenticated() {
-                html! {
-                    <div class="auth-redirect">
-                        <script>
-                            {"window.location.href = '/dashboard';"}
-                        </script>
-                    </div>
-                }
-            } else {
-                html! { <Register /> }
-            }
+            // Simply render the register page - let the register component handle authentication checks
+            html! { <Register /> }
         },
         Route::EmailVerified => html! { <EmailVerified /> },
         Route::RegistrationComplete => html! { <RegistrationComplete /> },

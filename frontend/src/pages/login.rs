@@ -7,7 +7,6 @@ use crate::services::auth;
 use crate::services::auth_context::AuthContext;
 use yew_router::prelude::*;
 use crate::routes::Route;
-use gloo::console::log;
 use serde_json::Value;
 
 #[derive(Default, Clone, Serialize)]
@@ -36,14 +35,14 @@ struct LoginData {
 struct User {
     id: String,
     username: String,
-    email: String,
+    email: Option<String>,
     is_email_verified: bool,
     created_at: String,
     #[serde(default)]
     role: String,
+    is_active: bool,
     #[serde(default)]
     csrf_token: String,
-    is_active: bool, // Added is_active field
 }
 
 #[function_component(Login)]
@@ -53,6 +52,18 @@ pub fn login() -> Html {
     let error = use_state(|| None::<String>);
     let is_loading = use_state(|| false);
     let navigator = use_navigator().unwrap();
+    
+    // Check if user is already authenticated and redirect to dashboard
+    {
+        let auth_context = auth_context.clone();
+        let navigator = navigator.clone();
+        use_effect_with(auth_context.is_authenticated, move |is_authenticated| {
+            if *is_authenticated {
+                navigator.push(&Route::Dashboard);
+            }
+            || {}
+        });
+    }
 
     let onsubmit = {
         let form = form.clone();
@@ -83,25 +94,17 @@ pub fn login() -> Html {
 
                 match response {
                     Ok(resp) => {
-                        log!("Response status:", resp.status());
-
                         match resp.json::<LoginResponse>().await {
                             Ok(login_resp) => {
                                 let login_resp_clone = login_resp.clone();
                                 if login_resp.success {
-                                    if let Some(data) = &login_resp_clone.data {
-                                        log!("Login successful");
+                                    if let Some(_data) = &login_resp_clone.data {
+                                        // Always use the full response processing to ensure proper state reset
+                                        let json_value = serde_json::to_value(&login_resp_clone).unwrap_or_default();
+                                        auth::store_csrf_token_from_response(&json_value);
                                         
-                                        // Store CSRF token from user data
-                                        if !data.user.csrf_token.is_empty() {
-                                            log!("Found CSRF token in user data");
-                                            auth::set_csrf_token(&data.user.csrf_token);
-                                        } else {
-                                            // Try to extract from the full response
-                                            let json_value = serde_json::to_value(&login_resp_clone).unwrap_or_default();
-                                            auth::store_csrf_token_from_response(&json_value);
-                                        }
-                                        
+                                        // Set authenticated state immediately to prevent redirect loops
+                                        auth::set_authenticated_state(true);
                                         set_auth.emit(true);
                                         navigator.push(&Route::Dashboard);
                                     } else {
@@ -111,24 +114,20 @@ pub fn login() -> Html {
                                     error.set(Some(login_resp.message));
                                 }
                             },
-                            Err(e) => {
-                                log!("Failed to parse login response:", e.to_string());
-                                
-                                // Try to parse as raw JSON to debug
+                            Err(_) => {
+                                // Try to parse as raw JSON to handle potential parsing issues
                                 match resp.text().await {
                                     Ok(text) => {
-                                        let text_clone = text.clone();
-                                        log!("Raw response:", text_clone);
-                                        
                                         // Try to manually extract CSRF token from JSON
                                         if let Ok(json) = serde_json::from_str::<Value>(&text) {
                                             if let Some(data) = json.get("data") {
                                                 if let Some(user) = data.get("user") {
-                                                    if let Some(csrf_token) = user.get("csrf_token").and_then(|t| t.as_str()) {
-                                                        log!("Found CSRF token, setting");
-                                                        auth::set_csrf_token(csrf_token);
+                                                    if let Some(_csrf_token) = user.get("csrf_token").and_then(|t| t.as_str()) {
+                                                        // Use the full response processing to ensure proper state reset
+                                                        auth::store_csrf_token_from_response(&json);
                                                         
-                                                        // Authentication successful
+                                                        // Set authenticated state immediately to prevent redirect loops
+                                                        auth::set_authenticated_state(true);
                                                         set_auth.emit(true);
                                                         navigator.push(&Route::Dashboard);
                                                         return;
@@ -144,8 +143,7 @@ pub fn login() -> Html {
                             }
                         }
                     }
-                    Err(e) => {
-                        log!("Network error:", e.to_string());
+                    Err(_) => {
                         error.set(Some("Network error. Please check your connection and try again.".to_string()));
                     }
                 }
