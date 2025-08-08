@@ -42,7 +42,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_self_edit_forbidden() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();
@@ -112,7 +112,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_role_other_user_success() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
         // Create mock services
@@ -187,7 +187,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_self_edit_forbidden() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();
@@ -256,7 +256,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_update_user_status_other_user_success() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         let target_user = mock_user(fixture.test_target_user_id, "target_user", "user", true);
         
         // Create mock services
@@ -336,7 +336,7 @@ mod tests {
     // This is not strictly required by the subtask but confirms the pattern.
     #[actix_rt::test]
     async fn test_update_user_username_self_edit_forbidden() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         
         // Create mock services
         let mut user_repo = create_mock_user_repository();

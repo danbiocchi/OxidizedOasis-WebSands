@@ -34,9 +34,19 @@ mod create_pool_tests {
         };
 
         let result = create_pool(&config).await;
-        // Even with a valid-looking config, it might fail due to connection issues
-        // We're testing the function behavior, not actual database connectivity
-        assert!(result.is_ok() || result.is_err()); // Just verify it returns a result
+        // Test that the function handles the configuration properly
+        // With an invalid test database URL, this should fail
+        assert!(result.is_err());
+        
+        // Verify we get a connection or configuration error
+        if let Err(error) = result {
+            match error {
+                DatabaseError::Connection(_) | DatabaseError::Configuration(_) => {
+                    // Expected error types for invalid database URL
+                }
+                _ => panic!("Unexpected error type: {:?}", error),
+            }
+        }
     }
 
     #[tokio::test]
@@ -97,8 +107,18 @@ mod create_pool_tests {
         };
 
         let result = create_pool(&config).await;
-        // This will likely fail due to connection issues, which is expected behavior
-        assert!(result.is_ok() || result.is_err());
+        // This should fail due to non-existent database
+        assert!(result.is_err());
+        
+        // Verify we get a connection or configuration error for missing database
+        if let Err(error) = result {
+            match error {
+                DatabaseError::Connection(_) | DatabaseError::Configuration(_) => {
+                    // Expected error types for missing database
+                }
+                _ => panic!("Unexpected error type for missing database: {:?}", error),
+            }
+        }
     }
 
     #[tokio::test]
@@ -122,8 +142,14 @@ mod create_pool_tests {
         };
 
         let result = create_pool(&config).await;
-        // Test that function handles development configuration appropriately
-        assert!(result.is_ok() || result.is_err());
+        // Development configuration should fail with non-existent database
+        assert!(result.is_err());
+        
+        // Verify appropriate error handling for dev configuration
+        if let Err(error) = result {
+            let error_message = format!("{}", error);
+            assert!(!error_message.is_empty(), "Error message should not be empty");
+        }
     }
 
     #[tokio::test]
@@ -172,7 +198,8 @@ mod create_pool_tests {
         };
 
         let result_low = create_pool(&config_low).await;
-        assert!(result_low.is_ok() || result_low.is_err());
+        // Should fail with non-existent database, regardless of connection count
+        assert!(result_low.is_err());
         
         // Test with higher max connections
         let config_high = AppConfig {
@@ -192,7 +219,15 @@ mod create_pool_tests {
         };
 
         let result_high = create_pool(&config_high).await;
-        assert!(result_high.is_ok() || result_high.is_err());
+        // Should also fail with non-existent database
+        assert!(result_high.is_err());
+        
+        // Verify both configurations produce appropriate errors
+        if let (Err(err_low), Err(err_high)) = (result_low, result_high) {
+            // Both should be connection or configuration errors
+            assert!(matches!(err_low, DatabaseError::Connection(_) | DatabaseError::Configuration(_)));
+            assert!(matches!(err_high, DatabaseError::Connection(_) | DatabaseError::Configuration(_)));
+        }
     }
 
     #[tokio::test]
@@ -333,7 +368,8 @@ mod integration_scenarios_tests {
         };
 
         let result = create_pool(&config).await;
-        assert!(result.is_ok() || result.is_err());
+        // Should fail with non-existent test database
+        assert!(result.is_err(), "Expected error for non-existent development database");
         
         // Test setting environment to production
         std::env::set_var("DB_USER", "dreamer");
@@ -355,7 +391,15 @@ mod integration_scenarios_tests {
         };
 
         let prod_result = create_pool(&prod_config).await;
-        assert!(prod_result.is_ok() || prod_result.is_err());
+        // Should also fail with non-existent production database
+        assert!(prod_result.is_err(), "Expected error for non-existent production database");
+        
+        // Verify both environments handle connection errors appropriately
+        if let (Err(dev_err), Err(prod_err)) = (result, prod_result) {
+            // Both should produce connection or configuration errors
+            assert!(matches!(dev_err, DatabaseError::Connection(_) | DatabaseError::Configuration(_)));
+            assert!(matches!(prod_err, DatabaseError::Connection(_) | DatabaseError::Configuration(_)));
+        }
     }
 
     #[tokio::test]

@@ -277,25 +277,8 @@ mod admin_middleware_tests {
 mod csrf_protection_tests {
     use super::*;
     
-    #[actix_rt::test]
-    async fn test_csrf_protection_missing_header() {
-        // Test CSRF protection when X-CSRF-Token header is missing
-        let fixture = MiddlewareTestFixture::new();
-        
-        // This would be tested with actual CSRF middleware integration
-        // For now, this is a placeholder for future CSRF middleware testing
-        assert!(true); // Placeholder assertion
-    }
-
-    #[actix_rt::test]
-    async fn test_csrf_protection_invalid_token() {
-        // Test CSRF protection with invalid token
-        let fixture = MiddlewareTestFixture::new();
-        
-        // This would be tested with actual CSRF middleware integration
-        // For now, this is a placeholder for future CSRF middleware testing
-        assert!(true); // Placeholder assertion
-    }
+    // CSRF protection tests removed - functionality not yet implemented
+    // TODO: Add CSRF protection tests when middleware is implemented
     
     #[cfg(test)]
     mod metrics_middleware_tests {
@@ -1186,19 +1169,5 @@ mod logger_middleware_tests {
     }
 }
 
-#[cfg(test)]
-mod rate_limiting_tests {
-    
-    
-    #[actix_rt::test]
-    async fn test_rate_limiting_under_limit() {
-        // Test that requests under rate limit are allowed
-        assert!(true); // Placeholder for future rate limiting tests
-    }
-
-    #[actix_rt::test]
-    async fn test_rate_limiting_over_limit() {
-        // Test that requests over rate limit are blocked
-        assert!(true); // Placeholder for future rate limiting tests
-    }
-}
+// Rate limiting tests removed - functionality not yet implemented
+// TODO: Add rate limiting tests when middleware is implemented

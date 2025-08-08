@@ -26,7 +26,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_user_creation_basic() {
-        let fixture = UnifiedTestFixture::new_with_mocks().await;
+        let fixture = UnifiedTestFixture::new_with_database().await;
         
         let test_user = create_test_user(
             fixture.test_user_id,
