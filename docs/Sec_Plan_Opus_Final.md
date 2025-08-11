@@ -1,172 +1,249 @@
-# Enhanced Security Implementation Plan - Revised Edition
+# Security_Implementation_Plan.md
+
+# Comprehensive Security Implementation Plan for Oasis Platform
+
+## Table of Contents
+1. [Executive Summary](#executive-summary)
+2. [Current State Analysis](#current-state-analysis)
+3. [Architecture Overview](#architecture-overview)
+4. [Implementation Phases](#implementation-phases)
+5. [Technical Specifications](#technical-specifications)
+6. [Testing Strategy](#testing-strategy)
+7. [Performance Requirements](#performance-requirements)
+8. [Risk Mitigation](#risk-mitigation)
+9. [Success Metrics](#success-metrics)
+
+---
 
 ## Executive Summary
 
-This document provides a realistic, comprehensive implementation roadmap for building a complete security event monitoring and incident management system from the ground up. While leveraging the robust authentication infrastructure already in place, this plan acknowledges that **the security monitoring system currently exists only as frontend mockups** and provides a detailed path to full implementation.
+This document provides a complete implementation roadmap for transforming the Oasis platform's placeholder security system into a production-ready security event monitoring and incident management platform. The plan addresses critical gaps identified in the codebase review and incorporates enterprise-grade features including event persistence, real-time processing, and intelligent correlation.
 
-### Current State Assessment
-- ✅ **Strong Foundation**: Complete JWT authentication system with 971 lines of battle-tested code
-- ✅ **Admin Infrastructure**: Role-based access control and middleware systems fully implemented
-- ✅ **Frontend UI**: Security incidents dashboard exists with comprehensive filtering and modal views
-- ❌ **Critical Gap**: No backend security event processing or database tables exist
-- ❌ **Missing Infrastructure**: No event collection, correlation, or real-time processing systems
+### Key Objectives
+- **Zero Data Loss**: Implement persistent queue for event ingestion
+- **High Performance**: Handle 10,000+ events/minute with <100ms query latency
+- **Real-time Monitoring**: WebSocket-based live updates with backpressure handling
+- **Intelligent Correlation**: Automated incident creation from event patterns
+- **Production Ready**: Complete with monitoring, alerting, and documentation
 
-### Implementation Reality
-This plan transforms placeholder implementations into production-ready systems through:
-- **22-26 week realistic timeline** (not 16-20 weeks)
-- **Ground-up database schema implementation** starting from current migration state
-- **Incremental replacement** of mock data with real security event processing
-- **Backward-compatible integration** with existing authentication and admin systems
+### Timeline
+- **Total Duration**: 10-12 weeks
+- **Approach**: Test-first, phase-by-phase implementation
+- **Validation**: Each phase has completion gates before proceeding
 
-## Codebase Readiness Assessment
+---
 
-### Current Infrastructure Strengths ✅
+## Current State Analysis
 
-**Authentication & Authorization System**
-- Comprehensive JWT implementation at [`src/core/auth/jwt.rs`](src/core/auth/jwt.rs:1) with 971 lines of battle-tested code
-- Token revocation service with active token tracking
-- Admin middleware with role-based access control at [`src/infrastructure/middleware/admin.rs`](src/infrastructure/middleware/admin.rs:1)
-- CSRF protection and comprehensive auth middleware at [`src/infrastructure/middleware/auth.rs`](src/infrastructure/middleware/auth.rs:1)
-- Extensive test coverage with 390+ lines of middleware tests
+### Existing Infrastructure Strengths
 
-**Database Foundation**
-- Well-structured migrations with UUID-based schemas
-- Existing tables: users, sessions, password_reset_tokens, revoked_tokens, active_tokens
-- Proper foreign key constraints and indexing strategy
-- PostgreSQL-ready with advanced data types (JSONB, INET, etc.)
+#### Authentication System (Fully Implemented)
+- **Location**: `src/core/auth/jwt.rs` (971 lines)
+- **Features**:
+  - JWT-based authentication with RS256 signing
+  - Token revocation with active tracking
+  - Refresh token rotation
+  - Role-based access control (RBAC)
+  - Comprehensive test coverage
 
-**Frontend Implementation**
-- Complete security incidents UI at [`frontend/src/pages/dashboard/admin/security_incidents.rs`](frontend/src/pages/dashboard/admin/security_incidents.rs:1) (496 lines)
-- Sophisticated filtering, search, and modal detail views
-- Mock data structure perfectly aligned with planned schema
-- Professional styling and responsive design
+#### Middleware Stack (Production Ready)
+- **Admin Middleware**: `src/infrastructure/middleware/admin.rs`
+  - Role validation for admin endpoints
+  - Token revocation checking
+  - Request extensions for claims
+  
+- **Auth Middleware**: `src/infrastructure/middleware/auth.rs`
+  - Bearer token and cookie authentication
+  - CSRF protection
+  - Audience validation
+  
+- **Supporting Middleware**:
+  - Rate limiting with endpoint-specific limits
+  - CORS configuration
+  - Request logging
+  - Metrics collection
 
-**Backend API Structure**
-- REST API endpoints defined at [`src/api/routes/admin/security.rs`](src/api/routes/admin/security.rs:1)
-- Proper data models with validation
-- Pagination and filtering support
-- Error handling and response structures
+#### Database Schema (Partial)
+```sql
+-- Existing tables:
+- users (with roles and email verification)
+- sessions (JWT session tracking)
+- password_reset_tokens
+- revoked_tokens
+- active_tokens
 
-### Implementation Gaps ⚠️
+-- Missing tables:
+- security_events
+- security_incidents
+- event_correlations
+- incident_history
+```
 
-**Missing Database Tables**
-- Security events table (primary event storage)
-- Security incidents table (incident management)
-- Event-to-incident correlation mapping
+### Critical Gaps Identified
 
-**Backend Processing Logic**
-- Event collection middleware
-- Event correlation engine
-- Real-time processing pipeline
-- WebSocket infrastructure for live updates
+1. **No Event Persistence**: Events lost if database unavailable
+2. **Missing Database Tables**: Security-specific schema not implemented
+3. **Placeholder APIs**: Endpoints return empty responses
+4. **No Event Collection**: Security events not captured from middleware
+5. **No Real-time Processing**: Missing WebSocket infrastructure
+6. **No Correlation Engine**: Events not analyzed for patterns
+7. **Frontend Disconnected**: Dashboard shows only mock data
 
-**API Implementation**
-- Current endpoints return placeholder responses
-- Need full CRUD operations with database integration
-- Missing event ingestion endpoints
+### Risk Assessment
 
-## System Architecture
+**High Priority Risks**:
+- Data loss during database outages (no queue)
+- Performance degradation under load (no indexes)
+- Missing security events (no collection middleware)
 
-### Enhanced High-Level Design
+**Medium Priority Risks**:
+- Manual incident creation only (no automation)
+- No real-time alerting (missing WebSocket)
+- Limited visibility (dashboard not connected)
+
+---
+
+## Architecture Overview
+
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Client Layer                            │
+├─────────────────────────────────────────────────────────────────┤
+│  • Yew Frontend (WebAssembly)                                  │
+│  • WebSocket Client for Real-time Updates                      │
+│  • Optimistic UI Updates with Rollback                         │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      API Gateway Layer                          │
+├─────────────────────────────────────────────────────────────────┤
+│  • Actix-Web HTTP Server                                       │
+│  • JWT Authentication Middleware                               │
+│  • Rate Limiting (Per-Endpoint)                               │
+│  • CORS & CSRF Protection                                      │
+│  • Request Logging & Metrics                                   │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Event Collection Layer                        │
+├─────────────────────────────────────────────────────────────────┤
+│  • Security Event Middleware                                   │
+│  • Event Validation & Enrichment                               │
+│  • Persistent Queue (File-backed)                              │
+│  • Circuit Breaker for Downstream Failures                     │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Processing Pipeline                          │
+├─────────────────────────────────────────────────────────────────┤
+│  • Event Stream Processor (Tokio-based)                        │
+│  • Correlation Engine (Temporal & Pattern)                     │
+│  • Incident Management Service                                 │
+│  • Notification Service                                        │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Storage Layer                             │
+├─────────────────────────────────────────────────────────────────┤
+│  • PostgreSQL 14+ (Partitioned Tables)                         │
+│  • Redis (Caching & Session Management)                        │
+│  • File System (Queue Persistence)                             │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Monitoring Layer                             │
+├─────────────────────────────────────────────────────────────────┤
+│  • Prometheus Metrics                                          │
+│  • Grafana Dashboards                                          │
+│  • AlertManager                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
 
 ```mermaid
-graph TB
-    subgraph "Event Collection Layer"
-        A[Auth Middleware] --> EC[Event Collector]
-        B[API Endpoints] --> EC
-        C[Admin Actions] --> EC
-        D[System Events] --> EC
-    end
+graph LR
+    A[User Action] --> B[Middleware]
+    B --> C[Event Collector]
+    C --> D[Persistent Queue]
+    D --> E[Event Processor]
+    E --> F[Correlation Engine]
+    F --> G[Incident Service]
+    G --> H[Database]
+    H --> I[WebSocket]
+    I --> J[Dashboard]
     
-    subgraph "Event Processing Pipeline"
-        EC --> EP[Event Processor]
-        EP --> CE[Correlation Engine]
-        CE --> IA[Incident Aggregator]
-    end
-    
-    subgraph "Storage Layer"
-        IA --> SE[(Security Events)]
-        IA --> SI[(Security Incidents)]
-        SE --> SI
-    end
-    
-    subgraph "Real-time Layer"
-        SI --> WS[WebSocket Handler]
-        SE --> WS
-        WS --> FE[Frontend Dashboard]
-    end
-    
-    subgraph "API Layer"
-        SI --> API[Admin REST API]
-        SE --> API
-        API --> FE
-    end
+    D --> K[Dead Letter Queue]
+    E --> L[Metrics]
+    F --> M[Cache]
 ```
 
-### Component Integration Points
+---
 
-1. **Event Collector**: Integrates with existing middleware stack
-2. **Correlation Engine**: Processes events using configurable rules
-3. **WebSocket Handler**: Provides real-time updates to dashboard
-4. **Admin API**: Extends existing API structure
-5. **Frontend**: Connects to real APIs replacing mock data
+## Implementation Phases
 
-## Database Schema Design
+## Phase 1: Database Schema & Performance Validation
+**Duration**: 1 week  
+**Goal**: Create and validate a performant schema with mock data BEFORE any code implementation
 
-### Security Events Table
-
-```sql
--- Enable partitioning support
-CREATE TABLE security_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_type VARCHAR(50) NOT NULL,
-    event_subtype VARCHAR(50) NOT NULL,
-    severity VARCHAR(20) NOT NULL DEFAULT 'info',
-    user_id UUID,
-    session_id VARCHAR(255),
-    ip_address INET,
-    user_agent TEXT,
-    endpoint VARCHAR(500),
-    method VARCHAR(10),
-    status_code INTEGER,
-    message TEXT NOT NULL,
-    details JSONB,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    processed_at TIMESTAMPTZ,
-    incident_id UUID,
-    
-    CONSTRAINT fk_security_events_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT chk_severity CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical'))
-) PARTITION BY RANGE (timestamp);
-
--- Optimized indexes for high-volume operations
-CREATE INDEX CONCURRENTLY idx_security_events_timestamp ON security_events (timestamp DESC);
-CREATE INDEX CONCURRENTLY idx_security_events_type_severity ON security_events (event_type, severity);
-CREATE INDEX CONCURRENTLY idx_security_events_user_id ON security_events (user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_security_events_incident ON security_events (incident_id) WHERE incident_id IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_security_events_unprocessed ON security_events (timestamp) WHERE processed_at IS NULL;
-CREATE INDEX CONCURRENTLY idx_security_events_ip ON security_events USING gist (ip_address inet_ops);
-
--- Partitioning for scalability (monthly partitions)
-CREATE TABLE security_events_y2025m01 PARTITION OF security_events
-FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
-CREATE TABLE security_events_y2025m02 PARTITION OF security_events
-FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
--- Additional partitions created automatically by background process
-```
-
-### Security Incidents Table
+### Database Migration File
+Create `migrations/20250810010344_add_security_tables.sql`:
 
 ```sql
+-- ============================================
+-- SECURITY IMPLEMENTATION SCHEMA
+-- Single migration with all components
+-- ============================================
+
+-- 1. CUSTOM TYPES
+-- ============================================
+CREATE TYPE incident_severity AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE incident_status AS ENUM ('open', 'investigating', 'resolved', 'closed', 'escalated');
+CREATE TYPE event_severity AS ENUM ('info', 'low', 'medium', 'high', 'critical');
+CREATE TYPE event_outcome AS ENUM ('success', 'failure', 'blocked', 'allowed');
+CREATE TYPE correlation_type AS ENUM ('temporal', 'source_based', 'user_based', 'pattern_based');
+
+CREATE TYPE security_event_type AS ENUM (
+    'authentication_failure',
+    'authentication_success',
+    'authorization_failure',
+    'password_change',
+    'account_lockout',
+    'suspicious_login',
+    'data_access',
+    'data_modification',
+    'privilege_escalation',
+    'malware_detection',
+    'network_intrusion',
+    'ddos_attack',
+    'sql_injection',
+    'xss_attempt',
+    'csrf_attempt',
+    'file_integrity_violation',
+    'configuration_change',
+    'system_anomaly',
+    'api_abuse',
+    'rate_limit_exceeded'
+);
+
+-- 2. SECURITY INCIDENTS TABLE
+-- ============================================
 CREATE TABLE security_incidents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
-    description TEXT NOT NULL,
+    description TEXT,
     incident_type VARCHAR(50) NOT NULL,
-    severity VARCHAR(20) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'open',
-    reported_by UUID,
-    assigned_to UUID,
+    severity incident_severity NOT NULL,
+    status incident_status NOT NULL DEFAULT 'open',
+    reported_by UUID REFERENCES users(id),
+    assigned_to UUID REFERENCES users(id),
     affected_systems TEXT[],
     event_count INTEGER DEFAULT 0,
     first_event_at TIMESTAMPTZ,
@@ -175,25 +252,142 @@ CREATE TABLE security_incidents (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMPTZ,
     resolution_notes TEXT,
-    metadata JSONB,
+    tags TEXT[],
+    metadata JSONB DEFAULT '{}'::jsonb,
     
-    CONSTRAINT fk_incidents_reported_by FOREIGN KEY (reported_by) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT fk_incidents_assigned_to FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT chk_incident_severity CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-    CONSTRAINT chk_incident_status CHECK (status IN ('open', 'in_progress', 'resolved', 'closed'))
+    CONSTRAINT chk_resolution_consistency 
+        CHECK ((status IN ('resolved', 'closed') AND resolved_at IS NOT NULL) 
+            OR (status NOT IN ('resolved', 'closed') AND resolved_at IS NULL))
 );
 
--- Add foreign key to events table
-ALTER TABLE security_events ADD CONSTRAINT fk_security_events_incident 
-    FOREIGN KEY (incident_id) REFERENCES security_incidents(id) ON DELETE SET NULL;
+-- 3. SECURITY EVENTS TABLE (PARTITIONED)
+-- ============================================
+CREATE TABLE security_events (
+    id UUID DEFAULT gen_random_uuid(),
+    event_type security_event_type NOT NULL,
+    event_subtype VARCHAR(50),
+    severity event_severity NOT NULL,
+    user_id UUID REFERENCES users(id),
+    session_id VARCHAR(255),
+    source_ip INET,
+    user_agent TEXT,
+    endpoint VARCHAR(500),
+    method VARCHAR(10),
+    status_code INTEGER,
+    message TEXT NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMPTZ,
+    incident_id UUID REFERENCES security_incidents(id),
+    correlation_id UUID,
+    outcome event_outcome,
+    processed BOOLEAN DEFAULT false,
+    retry_count INTEGER DEFAULT 0,
+    
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
 
--- Indexes for incident management
-CREATE INDEX CONCURRENTLY idx_security_incidents_status_severity ON security_incidents (status, severity);
-CREATE INDEX CONCURRENTLY idx_security_incidents_assigned ON security_incidents (assigned_to) WHERE assigned_to IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_security_incidents_created ON security_incidents (created_at DESC);
-CREATE INDEX CONCURRENTLY idx_security_incidents_updated ON security_incidents (updated_at DESC);
+-- 4. CREATE INITIAL PARTITIONS
+-- ============================================
+CREATE TABLE security_events_2025_01 PARTITION OF security_events
+    FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+CREATE TABLE security_events_2025_02 PARTITION OF security_events
+    FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+CREATE TABLE security_events_2025_03 PARTITION OF security_events
+    FOR VALUES FROM ('2025-03-01') TO ('2025-04-01');
 
--- Update trigger for updated_at
+-- 5. CORRELATION TABLES
+-- ============================================
+CREATE TABLE event_correlations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    correlation_group_id UUID NOT NULL,
+    primary_event_id UUID NOT NULL,
+    related_event_id UUID NOT NULL,
+    correlation_type correlation_type NOT NULL,
+    confidence_score DECIMAL(3,2) CHECK (confidence_score BETWEEN 0.0 AND 1.0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    
+    UNIQUE(primary_event_id, related_event_id, correlation_type)
+);
+
+-- 6. INCIDENT HISTORY TABLE
+-- ============================================
+CREATE TABLE incident_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID REFERENCES security_incidents(id) ON DELETE CASCADE,
+    field_name VARCHAR(100) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    changed_by UUID REFERENCES users(id) NOT NULL,
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    change_reason TEXT
+);
+
+-- 7. INCIDENT-EVENT MAPPING
+-- ============================================
+CREATE TABLE incident_events (
+    incident_id UUID REFERENCES security_incidents(id) ON DELETE CASCADE,
+    event_id UUID,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    added_by UUID REFERENCES users(id) NOT NULL,
+    PRIMARY KEY (incident_id, event_id)
+);
+
+-- 8. CRITICAL PERFORMANCE INDEXES
+-- ============================================
+-- Event indexes (most critical for performance)
+CREATE INDEX CONCURRENTLY idx_events_timestamp_desc 
+    ON security_events (timestamp DESC);
+CREATE INDEX CONCURRENTLY idx_events_type_timestamp 
+    ON security_events (event_type, timestamp DESC);
+CREATE INDEX CONCURRENTLY idx_events_severity_critical 
+    ON security_events (severity, timestamp DESC) 
+    WHERE severity IN ('high', 'critical');
+CREATE INDEX CONCURRENTLY idx_events_unprocessed 
+    ON security_events (timestamp) 
+    WHERE processed = false;
+CREATE INDEX CONCURRENTLY idx_events_user_timestamp 
+    ON security_events (user_id, timestamp DESC) 
+    WHERE user_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY idx_events_correlation 
+    ON security_events (correlation_id) 
+    WHERE correlation_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY idx_events_incident 
+    ON security_events (incident_id) 
+    WHERE incident_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY idx_events_ip 
+    ON security_events USING gist (source_ip inet_ops);
+
+-- Incident indexes
+CREATE INDEX CONCURRENTLY idx_incidents_status 
+    ON security_incidents (status, severity, created_at DESC);
+CREATE INDEX CONCURRENTLY idx_incidents_assigned 
+    ON security_incidents (assigned_to) 
+    WHERE assigned_to IS NOT NULL;
+CREATE INDEX CONCURRENTLY idx_incidents_open_critical 
+    ON security_incidents (severity, created_at DESC) 
+    WHERE status = 'open';
+
+-- JSONB indexes for metadata queries
+CREATE INDEX CONCURRENTLY idx_events_details_gin 
+    ON security_events USING gin(details);
+CREATE INDEX CONCURRENTLY idx_incidents_metadata_gin 
+    ON security_incidents USING gin(metadata);
+
+-- Full-text search
+CREATE INDEX CONCURRENTLY idx_incidents_search 
+    ON security_incidents 
+    USING gin(to_tsvector('english', title || ' ' || COALESCE(description, '')));
+
+-- Correlation indexes
+CREATE INDEX CONCURRENTLY idx_correlations_group 
+    ON event_correlations (correlation_group_id);
+CREATE INDEX CONCURRENTLY idx_correlations_events 
+    ON event_correlations (primary_event_id, related_event_id);
+
+-- 9. UPDATE TRIGGERS
+-- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -205,588 +399,1349 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_security_incidents_updated_at 
     BEFORE UPDATE ON security_incidents 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 10. PARTITION MAINTENANCE FUNCTION
+-- ============================================
+CREATE OR REPLACE FUNCTION create_monthly_partition()
+RETURNS void AS $$
+DECLARE
+    partition_date DATE;
+    partition_name TEXT;
+    start_date DATE;
+    end_date DATE;
+BEGIN
+    partition_date := DATE_TRUNC('month', CURRENT_DATE + INTERVAL '1 month');
+    partition_name := 'security_events_' || TO_CHAR(partition_date, 'YYYY_MM');
+    start_date := partition_date;
+    end_date := partition_date + INTERVAL '1 month';
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = partition_name
+    ) THEN
+        EXECUTE format(
+            'CREATE TABLE %I PARTITION OF security_events FOR VALUES FROM (%L) TO (%L)',
+            partition_name,
+            start_date,
+            end_date
+        );
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 11. CLEANUP FUNCTION
+-- ============================================
+CREATE OR REPLACE FUNCTION cleanup_old_security_events()
+RETURNS void AS $$
+BEGIN
+    -- Archive events older than 90 days to cold storage
+    -- In production, this would move to S3/object storage
+    DELETE FROM security_events 
+    WHERE timestamp < CURRENT_TIMESTAMP - INTERVAL '90 days'
+    AND processed = true;
+    
+    -- Clean up resolved incidents older than 1 year
+    DELETE FROM security_incidents 
+    WHERE status IN ('resolved', 'closed') 
+    AND resolved_at < CURRENT_TIMESTAMP - INTERVAL '1 year';
+END;
+$$ LANGUAGE plpgsql;
+
+-- 12. COMMENTS FOR DOCUMENTATION
+-- ============================================
+COMMENT ON TABLE security_events IS 'Stores all security-related events from the application';
+COMMENT ON TABLE security_incidents IS 'Security incidents created from correlated events or manually';
+COMMENT ON COLUMN security_events.correlation_id IS 'Groups related events for correlation analysis';
+COMMENT ON COLUMN security_events.processed IS 'Whether event has been processed by correlation engine';
+COMMENT ON COLUMN security_incidents.metadata IS 'Additional structured data specific to incident type';
 ```
 
-## Implementation Phases
+### Performance Validation Script
+Create `scripts/test_schema_performance.sql`:
 
-### Phase 1: Database & Core Infrastructure (3-4 weeks)
+```sql
+-- Performance Testing Script
+-- Must complete all queries in specified time limits
 
-**Week 1-2: Database Foundation**
-- Create migration file: `migrations/20250810010344_add_security_tables.sql`
-- Implement database migrations with zero-downtime strategy
-- Set up partitioning automation script for monthly partitions
-- Create repository layer at `src/core/security/repository.rs`
-- Add database connection pooling configuration
+-- 1. Insert 1 million test events
+INSERT INTO security_events (
+    event_type,
+    severity,
+    user_id,
+    source_ip,
+    endpoint,
+    message,
+    timestamp,
+    details
+)
+SELECT
+    (ARRAY['authentication_failure', 'authentication_success', 'data_access', 'api_abuse'])[floor(random() * 4 + 1)]::security_event_type,
+    (ARRAY['info', 'low', 'medium', 'high', 'critical'])[floor(random() * 5 + 1)]::event_severity,
+    (SELECT id FROM users ORDER BY random() LIMIT 1),
+    (ARRAY['192.168.1.1', '10.0.0.1', '172.16.0.1'])[floor(random() * 3 + 1)]::inet,
+    '/api/endpoint' || floor(random() * 10),
+    'Test event message ' || generate_series,
+    CURRENT_TIMESTAMP - (random() * INTERVAL '30 days'),
+    jsonb_build_object(
+        'test_field', floor(random() * 100),
+        'session_id', md5(random()::text)
+    )
+FROM generate_series(1, 1000000);
 
-**Week 3-4: Core Services**
-- Implement security event service at `src/core/security/event_service.rs`
-- Create incident management service at `src/core/security/incident_service.rs`
-- Build event correlation engine at `src/core/security/correlation_engine.rs`
-- Add comprehensive logging using existing logging infrastructure
-- Create unit tests with >95% coverage
+-- 2. Test critical queries with EXPLAIN ANALYZE
 
-**Deliverables:**
-- ✅ Database schema with all tables, indexes, and partitions
-- ✅ Core service layer with full test coverage
-- ✅ Event correlation algorithms implementation
-- ✅ Performance benchmarks (target: 1000 events/minute)
+-- Dashboard aggregation (target: < 100ms)
+EXPLAIN (ANALYZE, BUFFERS) 
+SELECT 
+    date_trunc('hour', timestamp) as hour,
+    severity,
+    COUNT(*) as count
+FROM security_events
+WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+GROUP BY hour, severity
+ORDER BY hour DESC;
 
-### Phase 2: Event Collection & API Implementation (3-4 weeks)
+-- Unprocessed events query (target: < 50ms)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM security_events
+WHERE processed = false
+ORDER BY timestamp
+LIMIT 100;
 
-**Week 1-2: Event Collection Middleware**
-- Create event collection middleware at `src/infrastructure/middleware/security_events.rs`
-- Integrate with existing auth middleware stack
-- Implement event ingestion endpoints at `/api/admin/security/events`
-- Add background processing with `tokio::spawn` tasks
-- Create event filtering and categorization logic
+-- User activity query (target: < 100ms)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT 
+    e.*,
+    u.username
+FROM security_events e
+JOIN users u ON e.user_id = u.id
+WHERE e.user_id = (SELECT id FROM users LIMIT 1)
+AND e.timestamp > CURRENT_TIMESTAMP - INTERVAL '7 days'
+ORDER BY e.timestamp DESC
+LIMIT 50;
 
-**Week 3-4: Complete API Implementation**
-- Replace placeholder implementations in [`src/api/routes/admin/security.rs`](src/api/routes/admin/security.rs:1)
-- Implement full CRUD operations:
-  - `GET /api/admin/security/incidents` - List with pagination
-  - `POST /api/admin/security/incidents` - Create incident
-  - `GET /api/admin/security/incidents/{id}` - Get details
-  - `PATCH /api/admin/security/incidents/{id}` - Update status
-  - `GET /api/admin/security/events` - Query events
-- Integrate with existing authentication middleware
-- Add OpenAPI documentation
+-- Correlation query (target: < 200ms)
+EXPLAIN (ANALYZE, BUFFERS)
+WITH event_window AS (
+    SELECT *
+    FROM security_events
+    WHERE timestamp BETWEEN 
+        CURRENT_TIMESTAMP - INTERVAL '1 hour' 
+        AND CURRENT_TIMESTAMP
+    AND severity IN ('high', 'critical')
+)
+SELECT 
+    e1.id as primary_event,
+    e2.id as related_event,
+    e1.event_type,
+    e2.event_type
+FROM event_window e1
+JOIN event_window e2 ON 
+    e1.user_id = e2.user_id
+    AND e1.id != e2.id
+    AND ABS(EXTRACT(EPOCH FROM (e1.timestamp - e2.timestamp))) < 300;
 
-**Deliverables:**
-- ✅ Event collection middleware integrated and tested
-- ✅ Complete REST API with database integration
-- ✅ Async event processing pipeline
-- ✅ OpenAPI specification and Postman collection
+-- 3. Verify indexes are being used
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    idx_scan,
+    idx_tup_read,
+    idx_tup_fetch
+FROM pg_stat_user_indexes
+WHERE schemaname = 'public'
+AND tablename IN ('security_events', 'security_incidents')
+ORDER BY idx_scan DESC;
+```
 
-### Phase 3: Frontend Integration & Real-time Features (2-3 weeks)
+### ✅ Phase 1 Completion Gate
 
-**Week 1: Frontend API Integration**
-- Replace mock data in [`frontend/src/pages/dashboard/admin/security_incidents.rs`](frontend/src/pages/dashboard/admin/security_incidents.rs:1)
-- Implement API service layer for security operations
-- Add error handling and loading states
-- Create incident management workflows
+```bash
+#!/bin/bash
+# scripts/validate_schema.sh
 
-**Week 2-3: Real-time Updates**
-- Implement WebSocket infrastructure for live updates
-- Add real-time incident notifications
-- Create event timeline views
-- Implement advanced filtering and search
+echo "Running Phase 1 Schema Validation..."
 
-**Deliverables:**
-- Frontend fully integrated with real APIs
-- Real-time dashboard updates
-- Enhanced user experience features
-- Complete incident management workflow
+# Check if migration applied
+psql -d oasis -c "SELECT COUNT(*) FROM security_events;" || exit 1
 
-### Phase 4: Advanced Features & Optimization (2-3 weeks)
+# Run performance tests
+psql -d oasis -f scripts/test_schema_performance.sql > perf_results.txt
 
-**Week 1-2: Advanced Correlation**
-- Implement ML-based event correlation
-- Add temporal and pattern-based correlation
-- Create automated incident creation rules
-- Implement event aggregation and metrics
+# Validate results
+grep -q "Seq Scan" perf_results.txt && echo "ERROR: Sequential scan detected!" && exit 1
+grep -q "execution time: [0-9]\{4,\}" perf_results.txt && echo "ERROR: Query too slow!" && exit 1
 
-**Week 3: Performance & Security Hardening**
-- Load testing and optimization
-- Security audit of event processing
-- Performance tuning for high-volume scenarios
-- Comprehensive security testing
+echo "✅ Schema validation complete!"
+```
 
-**Deliverables:**
-- Advanced event correlation algorithms
-- Performance optimization results
-- Security audit report
-- Production readiness certification
+---
 
-### Phase 5: Production Deployment (1-2 weeks)
+## Phase 2: Event Queue Infrastructure
+**Duration**: 1 week  
+**Goal**: Build persistent queue BEFORE any event collection to ensure zero data loss
 
-**Week 1: Deployment Preparation**
-- Production environment setup
-- Monitoring and alerting configuration
-- Documentation completion
-- User training materials
+### Persistent Queue Implementation
+Create `src/core/security/event_queue.rs`:
 
-**Week 2: Go-Live & Monitoring**
-- Staged production deployment
-- Real-time monitoring setup
-- Performance validation
-- User acceptance testing
-
-**Deliverables:**
-- Production deployment
-- Monitoring dashboards
-- Complete documentation
-- User training completion
-
-## Enhanced Event Types & Categories
-
-### Authentication Events
-- `login_success`: Successful user authentication with device/location tracking
-- `login_failure`: Failed login attempts with IP geolocation and frequency analysis
-- `password_change`: Password modifications with security strength validation
-- `account_locked`: Account lockout due to failed attempts with unlock procedures
-- `token_expired`: JWT token expiration events with renewal patterns
-- `token_revoked`: Manual token revocation with reason tracking
-- `mfa_enabled`: Multi-factor authentication setup events
-- `mfa_disabled`: MFA removal with security impact assessment
-
-### Authorization Events
-- `access_denied`: Failed authorization attempts with permission analysis
-- `privilege_escalation`: Attempts to access higher privileges with context
-- `admin_action`: Administrative operations with full audit trail
-- `role_change`: User role modifications with approval workflow
-- `permission_grant`: New permission assignments with justification
-- `permission_revoke`: Permission removals with impact analysis
-
-### API Security Events
-- `rate_limit_exceeded`: Rate limiting triggers with client identification
-- `suspicious_endpoint`: Unusual API endpoint access patterns
-- `malformed_request`: Invalid request formats with attack signature analysis
-- `csrf_violation`: CSRF protection triggers with request analysis
-- `sql_injection_attempt`: Detected SQL injection patterns
-- `xss_attempt`: Cross-site scripting prevention triggers
-- `api_key_misuse`: Invalid or misused API key attempts
-
-### System Security Events
-- `service_startup`: System initialization with configuration validation
-- `service_shutdown`: System shutdown events with cleanup verification
-- `configuration_change`: System config modifications with diff tracking
-- `security_update`: Security patch applications with validation
-- `certificate_renewal`: SSL/TLS certificate updates with validation
-- `backup_created`: Security backup operations with integrity verification
-- `vulnerability_detected`: Automated vulnerability scan results
-
-## Event Correlation Engine
-
-### Correlation Algorithms
-
-**1. Temporal Correlation**
 ```rust
-use chrono::{Duration, DateTime, Utc};
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::collections::VecDeque;
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{AsyncWriteExt, AsyncReadExt, BufReader, AsyncBufReadExt};
+use serde::{Serialize, Deserialize};
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
+use anyhow::Result;
 
-pub struct TemporalCorrelation {
-    time_window: Duration,
-    event_threshold: u32,
-    correlation_rules: Vec<CorrelationRule>,
-    event_buffer: HashMap<String, Vec<SecurityEvent>>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuedEvent {
+    pub id: Uuid,
+    pub event: SecurityEvent,
+    pub queued_at: DateTime<Utc>,
+    pub retry_count: u32,
+    pub last_error: Option<String>,
 }
 
-pub struct CorrelationRule {
-    event_types: Vec<String>,
-    severity_escalation: SeverityLevel,
-    incident_type: String,
-    confidence_threshold: f32,
-    description: String,
+pub struct PersistentEventQueue {
+    queue_dir: PathBuf,
+    active_file: PathBuf,
+    in_memory_buffer: Arc<Mutex<VecDeque<QueuedEvent>>>,
+    max_memory_items: usize,
+    max_file_size: u64,
+    metrics: Arc<QueueMetrics>,
 }
 
-impl TemporalCorrelation {
-    pub fn new() -> Self {
+impl PersistentEventQueue {
+    pub async fn new(queue_dir: impl AsRef<Path>) -> Result<Self> {
+        let queue_dir = queue_dir.as_ref().to_path_buf();
+        fs::create_dir_all(&queue_dir).await?;
+        
+        let active_file = queue_dir.join("active.queue");
+        let queue = Self {
+            queue_dir,
+            active_file: active_file.clone(),
+            in_memory_buffer: Arc::new(Mutex::new(VecDeque::new())),
+            max_memory_items: 10_000,
+            max_file_size: 100_000_000, // 100MB
+            metrics: Arc::new(QueueMetrics::new()),
+        };
+        
+        // Recover from disk on startup
+        queue.recover_from_disk().await?;
+        
+        Ok(queue)
+    }
+    
+    pub async fn enqueue(&self, event: SecurityEvent) -> Result<()> {
+        let queued_event = QueuedEvent {
+            id: Uuid::new_v4(),
+            event,
+            queued_at: Utc::now(),
+            retry_count: 0,
+            last_error: None,
+        };
+        
+        // Try to add to memory buffer first
+        let mut buffer = self.in_memory_buffer.lock().await;
+        
+        if buffer.len() >= self.max_memory_items {
+            // Flush to disk if buffer is full
+            self.flush_to_disk(&mut buffer).await?;
+        }
+        
+        buffer.push_back(queued_event);
+        self.metrics.increment_enqueued();
+        
+        Ok(())
+    }
+    
+    pub async fn dequeue_batch(&self, batch_size: usize) -> Result<Vec<QueuedEvent>> {
+        let mut buffer = self.in_memory_buffer.lock().await;
+        let mut batch = Vec::with_capacity(batch_size);
+        
+        // First, try to get from memory
+        while batch.len() < batch_size && !buffer.is_empty() {
+            if let Some(event) = buffer.pop_front() {
+                batch.push(event);
+            }
+        }
+        
+        // If not enough in memory, load from disk
+        if batch.len() < batch_size {
+            self.load_from_disk(&mut buffer, batch_size - batch.len()).await?;
+            
+            while batch.len() < batch_size && !buffer.is_empty() {
+                if let Some(event) = buffer.pop_front() {
+                    batch.push(event);
+                }
+            }
+        }
+        
+        self.metrics.add_dequeued(batch.len());
+        Ok(batch)
+    }
+    
+    async fn flush_to_disk(&self, buffer: &mut VecDeque<QueuedEvent>) -> Result<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        
+        // Check if we need to rotate the file
+        if fs::metadata(&self.active_file).await?.len() > self.max_file_size {
+            self.rotate_queue_file().await?;
+        }
+        
+        // Write events to disk
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.active_file)
+            .await?;
+        
+        while let Some(event) = buffer.pop_front() {
+            let json = serde_json::to_string(&event)?;
+            file.write_all(json.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+        }
+        
+        file.flush().await?;
+        self.metrics.increment_flush_count();
+        
+        Ok(())
+    }
+    
+    async fn recover_from_disk(&self) -> Result<()> {
+        let mut recovered_count = 0;
+        
+        // Read all .queue files in the directory
+        let mut entries = fs::read_dir(&self.queue_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.extension() == Some(std::ffi::OsStr::new("queue")) {
+                recovered_count += self.recover_file(&path).await?;
+            }
+        }
+        
+        info!("Recovered {} events from disk", recovered_count);
+        self.metrics.set_recovered(recovered_count);
+        
+        Ok(())
+    }
+    
+    async fn recover_file(&self, path: &Path) -> Result<usize> {
+        let file = File::open(path).await?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut count = 0;
+        let mut buffer = self.in_memory_buffer.lock().await;
+        
+        while let Some(line) = lines.next_line().await? {
+            if let Ok(event) = serde_json::from_str::<QueuedEvent>(&line) {
+                buffer.push_back(event);
+                count += 1;
+                
+                // Don't load everything into memory at once
+                if buffer.len() >= self.max_memory_items {
+                    break;
+                }
+            }
+        }
+        
+        Ok(count)
+    }
+    
+    async fn rotate_queue_file(&self) -> Result<()> {
+        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+        let rotated_name = format!("queue_{}.queue", timestamp);
+        let rotated_path = self.queue_dir.join(rotated_name);
+        
+        fs::rename(&self.active_file, rotated_path).await?;
+        
+        Ok(())
+    }
+    
+    pub async fn requeue_failed(&self, events: Vec<QueuedEvent>) -> Result<()> {
+        let mut buffer = self.in_memory_buffer.lock().await;
+        
+        for mut event in events {
+            event.retry_count += 1;
+            event.queued_at = Utc::now();
+            
+            // Put failed events at the back of the queue
+            buffer.push_back(event);
+        }
+        
+        self.metrics.add_requeued(buffer.len());
+        Ok(())
+    }
+    
+    pub fn get_metrics(&self) -> QueueMetrics {
+        self.metrics.snapshot()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueMetrics {
+    enqueued: AtomicU64,
+    dequeued: AtomicU64,
+    requeued: AtomicU64,
+    flush_count: AtomicU64,
+    recovered: AtomicU64,
+    current_size: AtomicU64,
+}
+
+impl QueueMetrics {
+    fn new() -> Self {
         Self {
-            time_window: Duration::minutes(5),
-            event_threshold: 5,
-            correlation_rules: Self::default_rules(),
-            event_buffer: HashMap::new(),
+            enqueued: AtomicU64::new(0),
+            dequeued: AtomicU64::new(0),
+            requeued: AtomicU64::new(0),
+            flush_count: AtomicU64::new(0),
+            recovered: AtomicU64::new(0),
+            current_size: AtomicU64::new(0),
         }
     }
     
-    fn default_rules() -> Vec<CorrelationRule> {
-        vec![
-            CorrelationRule {
-                event_types: vec!["login_failure".to_string()],
-                severity_escalation: SeverityLevel::High,
-                incident_type: "brute_force_attack".to_string(),
-                confidence_threshold: 0.8,
-                description: "Multiple failed login attempts detected".to_string(),
-            },
-            CorrelationRule {
-                event_types: vec!["access_denied".to_string(), "privilege_escalation".to_string()],
-                severity_escalation: SeverityLevel::Critical,
-                incident_type: "privilege_escalation_attempt".to_string(),
-                confidence_threshold: 0.9,
-                description: "Unauthorized privilege escalation detected".to_string(),
-            },
-        ]
+    fn increment_enqueued(&self) {
+        self.enqueued.fetch_add(1, Ordering::Relaxed);
+        self.current_size.fetch_add(1, Ordering::Relaxed);
+    }
+    
+    fn add_dequeued(&self, count: usize) {
+        self.dequeued.fetch_add(count as u64, Ordering::Relaxed);
+        self.current_size.fetch_sub(count as u64, Ordering::Relaxed);
+    }
+    
+    fn add_requeued(&self, count: usize) {
+        self.requeued.fetch_add(count as u64, Ordering::Relaxed);
+    }
+    
+    fn increment_flush_count(&self) {
+        self.flush_count.fetch_add(1, Ordering::Relaxed);
+    }
+    
+    fn set_recovered(&self, count: usize) {
+        self.recovered.store(count as u64, Ordering::Relaxed);
+    }
+    
+    pub fn snapshot(&self) -> Self {
+        Self {
+            enqueued: AtomicU64::new(self.enqueued.load(Ordering::Relaxed)),
+            dequeued: AtomicU64::new(self.dequeued.load(Ordering::Relaxed)),
+            requeued: AtomicU64::new(self.requeued.load(Ordering::Relaxed)),
+            flush_count: AtomicU64::new(self.flush_count.load(Ordering::Relaxed)),
+            recovered: AtomicU64::new(self.recovered.load(Ordering::Relaxed)),
+            current_size: AtomicU64::new(self.current_size.load(Ordering::Relaxed)),
+        }
     }
 }
 ```
 
-**2. Pattern-Based Correlation**
-```rust
-pub struct PatternCorrelation {
-    patterns: Vec<AttackPattern>,
-    geo_analyzer: GeoLocationAnalyzer,
-    behavior_analyzer: BehaviorAnalyzer,
-}
-
-pub struct AttackPattern {
-    name: String,
-    sequence: Vec<EventPattern>,
-    time_constraints: Vec<Duration>,
-    severity: SeverityLevel,
-}
-
-// Example patterns:
-// - Failed login → Account lock → Password reset attempt (Account takeover)
-// - Port scan → Service enumeration → Exploit attempt (Network attack)
-// - Data export → Privilege change → Mass deletion (Insider threat)
-```
-
-**3. ML-Enhanced Correlation**
-- User behavior baseline modeling with statistical analysis
-- Clustering similar events using K-means or DBSCAN
-- Predictive threat escalation using time-series analysis
-- Dynamic threshold adjustment based on historical patterns
-
-### Real-time Processing Pipeline
+### Queue Processor Implementation
+Create `src/core/security/queue_processor.rs`:
 
 ```rust
-pub struct EventProcessor {
-    event_queue: Arc<Mutex<VecDeque<SecurityEvent>>>,
-    correlation_engine: CorrelationEngine,
-    incident_service: Arc<IncidentService>,
-    notification_service: Arc<NotificationService>,
+use std::time::Duration;
+use tokio::time::{sleep, interval};
+use anyhow::Result;
+
+pub struct QueueProcessor {
+    queue: Arc<PersistentEventQueue>,
+    repository: Arc<SecurityEventRepository>,
+    batch_size: usize,
+    process_interval: Duration,
+    max_retries: u32,
+    metrics: Arc<ProcessorMetrics>,
 }
 
-impl EventProcessor {
-    pub async fn process_event(&self, event: SecurityEvent) -> Result<()> {
-        // 1. Validate and enrich event
-        let enriched_event = self.enrich_event(event).await?;
+impl QueueProcessor {
+    pub fn new(
+        queue: Arc<PersistentEventQueue>,
+        repository: Arc<SecurityEventRepository>,
+    ) -> Self {
+        Self {
+            queue,
+            repository,
+            batch_size: 100,
+            process_interval: Duration::from_millis(100),
+            max_retries: 3,
+            metrics: Arc::new(ProcessorMetrics::new()),
+        }
+    }
+    
+    pub async fn start(self) -> Result<()> {
+        let mut interval = interval(self.process_interval);
         
-        // 2. Store in database
-        self.event_repository.create(&enriched_event).await?;
+        loop {
+            interval.tick().await;
+            
+            if let Err(e) = self.process_batch().await {
+                error!("Error processing batch: {}", e);
+                self.metrics.increment_errors();
+                
+                // Exponential backoff on errors
+                sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+    
+    async fn process_batch(&self) -> Result<()> {
+        let batch = self.queue.dequeue_batch(self.batch_size).await?;
         
-        // 3. Run correlation analysis
-        let correlation_results = self.correlation_engine
-            .analyze(&enriched_event).await?;
-        
-        // 4. Create or update incidents
-        for correlation in correlation_results {
-            self.handle_correlation(correlation).await?;
+        if batch.is_empty() {
+            return Ok(());
         }
         
-        // 5. Send real-time updates
-        self.websocket_service
-            .broadcast_event(&enriched_event).await?;
+        let start = Instant::now();
+        let batch_size = batch.len();
+        
+        // Separate events by retry status
+        let (retriable, dead_letter): (Vec<_>, Vec<_>) = batch
+            .into_iter()
+            .partition(|e| e.retry_count < self.max_retries);
+        
+        // Process retriable events
+        if !retriable.is_empty() {
+            match self.repository.bulk_insert_events(
+                retriable.iter().map(|q| q.event.clone()).collect()
+            ).await {
+                Ok(_) => {
+                    self.metrics.add_processed(retriable.len());
+                }
+                Err(e) => {
+                    error!("Failed to insert events: {}", e);
+                    
+                    // Requeue failed events
+                    let mut failed = retriable;
+                    for event in &mut failed {
+                        event.last_error = Some(e.to_string());
+                    }
+                    
+                    self.queue.requeue_failed(failed).await?;
+                    self.metrics.add_retried(retriable.len());
+                }
+            }
+        }
+        
+        // Send dead letter events to special handling
+        if !dead_letter.is_empty() {
+            self.handle_dead_letter_events(dead_letter).await?;
+        }
+        
+        let duration = start.elapsed();
+        self.metrics.record_batch_time(duration);
+        
+        debug!(
+            "Processed batch of {} events in {:?}",
+            batch_size, duration
+        );
+        
+        Ok(())
+    }
+    
+    async fn handle_dead_letter_events(&self, events: Vec<QueuedEvent>) -> Result<()> {
+        // Log to a special dead letter file
+        let dead_letter_path = PathBuf::from("queue/dead_letter.log");
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&dead_letter_path)
+            .await?;
+        
+        for event in events {
+            let log_entry = json!({
+                "event_id": event.id,
+                "event_type": event.event.event_type,
+                "retry_count": event.retry_count,
+                "last_error": event.last_error,
+                "event_data": event.event,
+                "timestamp": Utc::now(),
+            });
+            
+            file.write_all(serde_json::to_string(&log_entry)?.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+        }
+        
+        self.metrics.add_dead_letter(events.len());
         
         Ok(())
     }
 }
 ```
 
-## WebSocket Real-time Architecture
-
-### WebSocket Handler Implementation
+### Queue Tests
+Create `tests/queue_tests.rs`:
 
 ```rust
-pub struct SecurityWebSocketHandler {
-    connections: Arc<Mutex<HashMap<Uuid, WebSocketConnection>>>,
-    event_broadcaster: Arc<EventBroadcaster>,
-}
-
-pub struct WebSocketMessage {
-    message_type: MessageType,
-    data: serde_json::Value,
-    timestamp: DateTime<Utc>,
-}
-
-pub enum MessageType {
-    NewEvent,
-    IncidentCreated,
-    IncidentUpdated,
-    SystemStatus,
-    SecurityAlert,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    
+    #[tokio::test]
+    async fn test_queue_survives_restart() {
+        let temp_dir = TempDir::new().unwrap();
+        let queue_path = temp_dir.path().join("queue");
+        
+        // Create queue and add events
+        {
+            let queue = PersistentEventQueue::new(&queue_path).await.unwrap();
+            
+            for i in 0..1000 {
+                let event = create_test_event(i);
+                queue.enqueue(event).await.unwrap();
+            }
+            
+            // Force flush to disk
+            drop(queue);
+        }
+        
+        // Create new queue instance (simulating restart)
+        {
+            let queue = PersistentEventQueue::new(&queue_path).await.unwrap();
+            let metrics = queue.get_metrics();
+            
+            // Should have recovered all events
+            assert_eq!(metrics.recovered.load(Ordering::Relaxed), 1000);
+            
+            // Should be able to dequeue them
+            let batch = queue.dequeue_batch(1000).await.unwrap();
+            assert_eq!(batch.len(), 1000);
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_queue_handles_db_outage() {
+        let temp_dir = TempDir::new().unwrap();
+        let queue_path = temp_dir.path().join("queue");
+        
+        let queue = Arc::new(PersistentEventQueue::new(&queue_path).await.unwrap());
+        let mock_repo = Arc::new(MockRepository::new());
+        
+        // Simulate DB being down
+        mock_repo.set_failing(true);
+        
+        let processor = QueueProcessor::new(queue.clone(), mock_repo.clone());
+        
+        // Add events while DB is down
+        for i in 0..10_000 {
+            let event = create_test_event(i);
+            queue.enqueue(event).await.unwrap();
+        }
+        
+        // Start processor in background
+        let processor_handle = tokio::spawn(async move {
+            processor.start().await
+        });
+        
+        // Let it try to process (will fail and requeue)
+        sleep(Duration::from_secs(2)).await;
+        
+        // Restore DB connection
+        mock_repo.set_failing(false);
+        
+        // Wait for processing to complete
+        sleep(Duration::from_secs(5)).await;
+        
+        // All events should be processed
+        let metrics = queue.get_metrics();
+        assert_eq!(metrics.current_size.load(Ordering::Relaxed), 0);
+        assert!(mock_repo.get_inserted_count() >= 10_000);
+        
+        processor_handle.abort();
+    }
+    
+    #[tokio::test]
+    async fn test_queue_memory_bounds() {
+        let temp_dir = TempDir::new().unwrap();
+        let queue_path = temp_dir.path().join("queue");
+        
+        let queue = PersistentEventQueue::new(&queue_path).await.unwrap();
+        
+        // Add more events than memory limit
+        for i in 0..50_000 {
+            let event = create_test_event(i);
+            queue.enqueue(event).await.unwrap();
+        }
+        
+        // Check that files were created
+        let mut entries = fs::read_dir(&queue_path).await.unwrap();
+        let mut file_count = 0;
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            if entry.path().extension() == Some(OsStr::new("queue")) {
+                file_count += 1;
+            }
+        }
+        
+        assert!(file_count > 0, "Should have created queue files");
+        
+        // Memory buffer should be bounded
+        let buffer_size = queue.in_memory_buffer.lock().await.len();
+        assert!(buffer_size <= 10_000, "Memory buffer should be bounded");
+    }
 }
 ```
 
-### Real-time Event Broadcasting
+### ✅ Phase 2 Completion Gate
 
-- **Event Notifications**: Immediate broadcast of critical security events
-- **Incident Updates**: Real-time incident status changes and assignments
-- **Dashboard Metrics**: Live updates of security metrics and counters
-- **System Health**: Real-time monitoring of security system status
+```bash
+#!/bin/bash
+# scripts/validate_queue.sh
 
-## Storage Strategy & Performance
+echo "Running Phase 2 Queue Validation..."
 
-### Event Retention & Archival Policy
+# Run queue tests
+cargo test event_queue -- --nocapture || exit 1
 
-**Hot Storage (0-90 days)**
-- Full events in primary PostgreSQL database
-- All fields accessible for real-time analysis
-- Optimized indexes for dashboard queries
-- Partition by month for efficient maintenance
+# Test queue survives restart
+cargo test test_queue_survives_restart -- --nocapture || exit 1
 
-**Warm Storage (90 days - 1 year)**
-- Compressed events with reduced detail fields
-- Key metadata preserved for investigations
-- Stored in separate partitions or tables
-- Background compression process
+# Test DB outage handling
+cargo test test_queue_handles_db_outage -- --nocapture || exit 1
 
-**Cold Storage (1+ years)**
-- Archive to object storage (S3/MinIO)
-- Compliance and audit trail preservation
-- On-demand retrieval for investigations
-- Encrypted storage with access logging
+# Test memory bounds
+cargo test test_queue_memory_bounds -- --nocapture || exit 1
 
-### Performance Optimizations
+echo "✅ Queue infrastructure validation complete!"
+```
 
-**Database Level**
-- Table partitioning by timestamp
-- Materialized views for dashboard aggregations
-- Connection pooling optimization
-- Read replicas for query distribution
-- Bulk insert operations for high-volume events
+---
 
-**Application Level**
-- Asynchronous event processing
-- Event batching and buffering
-- Caching for frequently accessed data
-- Circuit breakers for external dependencies
-- Background job processing
+## Phase 3: Event Collection Pipeline
+**Duration**: 1 week  
+**Goal**: Build event collection with queue integration
 
-**Infrastructure Level**
-- Database connection pooling
-- Redis caching for session data
-- CDN for static dashboard assets
-- Load balancing for API endpoints
+### Event Collector Implementation
+Create `src/core/security/event_collector.rs`:
 
-## Security Hardening
+```rust
+use std::sync::Arc;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
-### Event Processing Security
+#[derive(Clone)]
+pub struct EventCollector {
+    queue: Arc<PersistentEventQueue>,
+    enricher: Arc<EventEnricher>,
+    validator: Arc<EventValidator>,
+    circuit_breaker: Arc<CircuitBreaker>,
+    metrics: Arc<CollectorMetrics>,
+}
 
-**Input Validation**
-- Comprehensive event data validation
-- SQL injection prevention in dynamic queries
-- XSS protection for event display
-- Input sanitization for all user-provided data
+impl EventCollector {
+    pub fn new(queue: Arc<PersistentEventQueue>) -> Self {
+        Self {
+            queue,
+            enricher: Arc::new(EventEnricher::new()),
+            validator: Arc::new(EventValidator::new()),
+            circuit_breaker: Arc::new(CircuitBreaker::new()),
+            metrics: Arc::new(CollectorMetrics::new()),
+        }
+    }
+    
+    pub async fn collect_event(&self, raw_event: RawSecurityEvent) -> Result<()> {
+        // Check circuit breaker
+        if !self.circuit_breaker.is_open() {
+            self.metrics.increment_rejected();
+            return Err(anyhow::anyhow!("Circuit breaker open"));
+        }
+        
+        // Validate event
+        self.validator.validate(&raw_event)?;
+        
+        // Enrich event with additional context
+        let enriched_event = self.enricher.enrich(raw_event).await?;
+        
+        // Send to queue
+        self.queue.enqueue(enriched_event).await?;
+        
+        self.metrics.increment_collected();
+        self.circuit_breaker.record_success();
+        
+        Ok(())
+    }
+    
+    pub async fn collect_batch(&self, events: Vec<RawSecurityEvent>) -> Result<()> {
+        let start = Instant::now();
+        let mut success_count = 0;
+        let mut error_count = 0;
+        
+        for event in events {
+            match self.collect_event(event).await {
+                Ok(_) => success_count += 1,
+                Err(e) => {
+                    error_count += 1;
+                    debug!("Failed to collect event: {}", e);
+                }
+            }
+        }
+        
+        let duration = start.elapsed();
+        self.metrics.record_batch(success_count, error_count, duration);
+        
+        if error_count > success_count {
+            self.circuit_breaker.record_failure();
+        }
+        
+        Ok(())
+    }
+}
 
-**Access Control**
-- Role-based access to security events
-- Granular permissions for incident management
-- API endpoint protection with rate limiting
-- Audit logging for all security operations
+pub struct EventEnricher;
 
-**Data Protection**
-- Encryption at rest for sensitive event data
-- TLS 1.3 for all API communications
-- Database connection encryption
-- Secure key management for encryption
+impl EventEnricher {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub async fn enrich(&self, raw: RawSecurityEvent) -> Result<SecurityEvent> {
+        let mut event = SecurityEvent {
+            id: Uuid::new_v4(),
+            event_type: raw.event_type,
+            severity: self.calculate_severity(&raw),
+            user_id: raw.user_id,
+            session_id: raw.session_id,
+            source_ip: raw.source_ip,
+            user_agent: raw.user_agent,
+            endpoint: raw.endpoint,
+            method: raw.method,
+            status_code: raw.status_code,
+            message: raw.message,
+            details: raw.details.unwrap_or_default(),
+            timestamp: raw.timestamp.unwrap_or_else(Utc::now),
+            processed_at: None,
+            incident_id: None,
+            correlation_id: None,
+            outcome: self.determine_outcome(&raw),
+            processed: false,
+            retry_count: 0,
+        };
+        
+        // Add enrichment data
+        event.details["enriched_at"] = json!(Utc::now());
+        event.details["enrichment_version"] = json!("1.0");
+        
+        // Add geolocation if IP present
+        if let Some(ip) = &event.source_ip {
+            event.details["geo"] = self.get_geo_info(ip).await?;
+        }
+        
+        // Add risk score
+        event.details["risk_score"] = json!(self.calculate_risk_score(&event));
+        
+        Ok(event)
+    }
+    
+    fn calculate_severity(&self, raw: &RawSecurityEvent) -> EventSeverity {
+        match raw.event_type {
+            SecurityEventType::AuthenticationFailure if raw.details.get("attempts").and_then(|v| v.as_u64()).unwrap_or(0) > 5 => EventSeverity::High,
+            SecurityEventType::PrivilegeEscalation => EventSeverity::Critical,
+            SecurityEventType::DataModification => EventSeverity::High,
+            SecurityEventType::SqlInjection | SecurityEventType::XssAttempt => EventSeverity::Critical,
+            _ => EventSeverity::Medium,
+        }
+    }
+    
+    fn determine_outcome(&self, raw: &RawSecurityEvent) -> EventOutcome {
+        match raw.status_code {
+            Some(200..=299) => EventOutcome::Success,
+            Some(400..=499) => EventOutcome::Blocked,
+            Some(500..=599) => EventOutcome::Failure,
+            _ => EventOutcome::Allowed,
+        }
+    }
+    
+    fn calculate_risk_score(&self, event: &SecurityEvent) -> f32 {
+        let mut score = 0.0;
+        
+        // Base score from severity
+        score += match event.severity {
+            EventSeverity::Critical => 10.0,
+            EventSeverity::High => 7.5,
+            EventSeverity::Medium => 5.0,
+            EventSeverity::Low => 2.5,
+            EventSeverity::Info => 1.0,
+        };
+        
+        // Adjust for event type
+        score *= match event.event_type {
+            SecurityEventType::PrivilegeEscalation => 2.0,
+            SecurityEventType::SqlInjection => 1.8,
+            SecurityEventType::DataModification => 1.5,
+            _ => 1.0,
+        };
+        
+        score.min(10.0)
+    }
+}
 
-### Attack Surface Mitigation
+pub struct EventValidator;
 
-**DoS Protection**
-- Event ingestion rate limiting
-- Circuit breakers for external services
-- Resource consumption monitoring
-- Graceful degradation under load
+impl EventValidator {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn validate(&self, event: &RawSecurityEvent) -> Result<()> {
+        // Validate required fields
+        if event.message.is_empty() {
+            return Err(anyhow::anyhow!("Event message cannot be empty"));
+        }
+        
+        if event.message.len() > 1000 {
+            return Err(anyhow::anyhow!("Event message too long"));
+        }
+        
+        // Validate timestamp if present
+        if let Some(ts) = event.timestamp {
+            let now = Utc::now();
+            let diff = (now - ts).num_seconds().abs();
+            
+            // Reject events more than 1 hour in the future or 24 hours in the past
+            if diff > 86400 || (ts > now && diff > 3600) {
+                return Err(anyhow::anyhow!("Event timestamp out of acceptable range"));
+            }
+        }
+        
+        // Validate IP format if present
+        if let Some(ip) = &event.source_ip {
+            // IP validation is done by the type system (IpAddr)
+        }
+        
+        Ok(())
+    }
+}
 
-**Log Injection Prevention**
-- Structured logging with validation
-- Output encoding for event display
-- Parameterized queries for database operations
-- Content Security Policy for frontend
+pub struct CircuitBreaker {
+    failure_count: AtomicU32,
+    success_count: AtomicU32,
+    state: Arc<Mutex<CircuitState>>,
+    threshold: u32,
+    recovery_time: Duration,
+}
+
+#[derive(Debug, Clone)]
+enum CircuitState {
+    Closed,
+    Open(Instant),
+    HalfOpen,
+}
+
+impl CircuitBreaker {
+    pub fn new() -> Self {
+        Self {
+            failure_count: AtomicU32::new(0),
+            success_count: AtomicU32::new(0),
+            state: Arc::new(Mutex::new(CircuitState::Closed)),
+            threshold: 10,
+            recovery_time: Duration::from_secs(60),
+        }
+    }
+    
+    pub fn is_open(&self) -> bool {
+        let mut state = self.state.lock().unwrap();
+        
+        match *state {
+            CircuitState::Closed => true,
+            CircuitState::Open(opened_at) => {
+                if opened_at.elapsed() > self.recovery_time {
+                    *state = CircuitState::HalfOpen;
+                    true
+                } else {
+                    false
+                }
+            }
+            CircuitState::HalfOpen => true,
+        }
+    }
+    
+    pub fn record_success(&self) {
+        self.success_count.fetch_add(1, Ordering::Relaxed);
+        let failures = self.failure_count.swap(0, Ordering::Relaxed);
+        
+        let mut state = self.state.lock().unwrap();
+        if matches!(*state, CircuitState::HalfOpen) && failures == 0 {
+            *state = CircuitState::Closed;
+        }
+    }
+    
+    pub fn record_failure(&self) {
+        let failures = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
+        
+        if failures >= self.threshold {
+            let mut state = self.state.lock().unwrap();
+            *state = CircuitState::Open(Instant::now());
+        }
+    }
+}
+```
+
+### Event Generator for Testing
+Create `src/bin/event_generator.rs`:
+
+```rust
+use clap::Parser;
+use rand::Rng;
+use std::time::Duration;
+use tokio::time::interval;
+
+#[derive(Parser)]
+struct Args {
+    #[clap(long, default_value = "100")]
+    rate: u32,
+    
+    #[clap(long, default_value = "60")]
+    duration_secs: u64,
+    
+    #[clap(long)]
+    attack_pattern: Option<String>,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+    
+    let collector = EventCollector::new(
+        Arc::new(PersistentEventQueue::new("queue").await?)
+    );
+    
+    let mut interval = interval(Duration::from_millis(1000 / args.rate as u64));
+    let end_time = Instant::now() + Duration::from_secs(args.duration_secs);
+    
+    let mut event_count = 0;
+    
+    while Instant::now() < end_time {
+        interval.tick().await;
+        
+        let event = match args.attack_pattern.as_deref() {
+            Some("brute_force") => generate_brute_force_event(event_count),
+            Some("sql_injection") => generate_sql_injection_event(event_count),
+            Some("ddos") => generate_ddos_event(event_count),
+            _ => generate_random_event(event_count),
+        };
+        
+        collector.collect_event(event).await?;
+        event_count += 1;
+        
+        if event_count % 1000 == 0 {
+            println!("Generated {} events", event_count);
+        }
+    }
+    
+    println!("Generated total of {} events in {} seconds", 
+             event_count, args.duration_secs);
+    
+    Ok(())
+}
+
+fn generate_random_event(index: u32) -> RawSecurityEvent {
+    let mut rng = rand::thread_rng();
+    
+    let event_types = vec![
+        SecurityEventType::AuthenticationSuccess,
+        SecurityEventType::AuthenticationFailure,
+        SecurityEventType::DataAccess,
+        SecurityEventType::ApiAbuse,
+    ];
+    
+    RawSecurityEvent {
+        event_type: event_types[rng.gen_range(0..event_types.len())].clone(),
+        user_id: if rng.gen_bool(0.8) { Some(Uuid::new_v4()) } else { None },
+        session_id: Some(format!("session_{}", index)),
+        source_ip: Some(format!("192.168.1.{}", rng.gen_range(1..255)).parse().unwrap()),
+        user_agent: Some("TestAgent/1.0".to_string()),
+        endpoint: Some(format!("/api/endpoint{}", rng.gen_range(1..10))),
+        method: Some("GET".to_string()),
+        status_code: Some(if rng.gen_bool(0.9) { 200 } else { 401 }),
+        message: format!("Test event {}", index),
+        details: Some(json!({
+            "test_index": index,
+            "random_value": rng.gen_range(0..100),
+        })),
+        timestamp: Some(Utc::now()),
+    }
+}
+```
+
+### ✅ Phase 3 Completion Gate
+
+```bash
+#!/bin/bash
+# scripts/validate_collection.sh
+
+echo "Running Phase 3 Collection Pipeline Validation..."
+
+# Test event generation rate
+echo "Testing 1000 events/second rate..."
+cargo run --bin event_generator -- --rate 1000 --duration-secs 10
+
+# Check queue didn't grow unbounded
+QUEUE_SIZE=$(ls -la queue/*.queue 2>/dev/null | wc -l)
+if [ "$QUEUE_SIZE" -gt 10 ]; then
+    echo "ERROR: Queue grew unbounded!"
+    exit 1
+fi
+
+# Check resource usage
+cargo test collector_resource_usage -- --nocapture || exit 1
+
+echo "✅ Collection pipeline validation complete!"
+```
+
+---
+
+### Phase 4: Repository Layer with Connection Pooling
+- Implement bulk insert operations using PostgreSQL COPY
+- Configure connection pool with proper limits
+- Add prepared statements for common queries
+- Test with 100 concurrent operations
+
+### Phase 5: Correlation Engine with Caching
+- Temporal correlation with sliding windows
+- Pattern-based correlation with state machines
+- Result caching to avoid reprocessing
+- Test: Correlate 10k events in <5 seconds
+
+### Phase 6: API Layer with Response Caching
+- Replace placeholder endpoints with real implementations
+- Add Redis caching for expensive queries
+- Implement cursor-based pagination
+- Test: 100 concurrent users, <100ms response time
+
+### Phase 7: WebSocket with Backpressure
+- Implement WebSocket actor with Actix
+- Add per-connection queue with limits
+- Subscription filtering by severity/type
+- Test: 1000 concurrent connections
+
+### Phase 8: Frontend Integration
+- Replace mock data with API calls
+- Add optimistic updates with rollback
+- Implement offline queue for actions
+- Test: Lighthouse score >90
+
+### Phase 9: Monitoring & Alerting
+- Prometheus metrics for all components
+- Grafana dashboards for visualization
+- AlertManager rules for critical events
+- Test: All metrics exposed and working
+
+### Phase 10: Production Readiness
+- Security scanning (cargo audit, trivy)
+- 24-hour soak test for stability
+- Complete documentation
+- Test: All gates passed, ready for deployment
+
+---
+
+## Technical Specifications
+
+### Performance Requirements
+
+| Metric | Target | Measurement Method |
+|--------|--------|-------------------|
+| Event Ingestion Rate | 10,000 events/minute | Load test with event generator |
+| Query Response Time (95th percentile) | <100ms | API load testing with Vegeta |
+| Dashboard Load Time | <2 seconds | Frontend performance testing |
+| WebSocket Latency | <100ms | Real-time event propagation test |
+| Memory Usage (per 1M events) | <2GB | Resource monitoring during load test |
+| CPU Usage (steady state) | <50% | System metrics during normal operation |
+| Queue Processing Latency | <500ms | Time from enqueue to database |
+| Correlation Processing | <5s for 10k events | Benchmark test |
+
+### Security Requirements
+
+- **Input Validation**: All event data sanitized before storage
+- **Access Control**: Role-based access with JWT validation
+- **Rate Limiting**: Per-endpoint limits to prevent abuse
+- **Encryption**: TLS 1.3 for transit, AES-256 for sensitive fields at rest
+- **Audit Trail**: All administrative actions logged
+- **CSRF Protection**: Token validation for state-changing operations
+
+### Scalability Targets
+
+- **Horizontal Scaling**: Support multiple backend instances
+- **Database Partitioning**: Monthly partitions for events table
+- **Cache Distribution**: Redis cluster support
+- **Queue Distribution**: Support for distributed queue (future)
+
+---
 
 ## Testing Strategy
 
-### Comprehensive Test Coverage
+### Test Pyramid
 
-**Unit Tests**
-- Security service layer tests (>95% coverage)
-- Event correlation algorithm tests
-- Database repository layer tests
-- Middleware integration tests
+```
+         /\
+        /  \    E2E Tests (10%)
+       /    \   - Full user workflows
+      /      \  - Production-like environment
+     /________\ 
+    /          \ Integration Tests (30%)
+   /            \ - API tests
+  /              \ - Database tests
+ /                \ - Queue tests
+/__________________\ Unit Tests (60%)
+                     - Business logic
+                     - Validators
+                     - Utilities
+```
 
-**Integration Tests**
-- End-to-end event processing flows
-- API endpoint testing with real database
-- WebSocket real-time update tests
-- Multi-user incident management scenarios
+### Critical Test Scenarios
 
-**Performance Tests**
-- High-volume event ingestion (10,000+ events/hour)
-- Concurrent user dashboard access (100+ users)
-- Database query performance under load
-- WebSocket connection scaling tests
+1. **Data Loss Prevention**
+   - Kill database during event ingestion
+   - Verify zero events lost via queue
 
-**Security Tests**
-- SQL injection prevention validation
-- Authentication bypass attempts
-- Authorization escalation tests
-- CSRF and XSS protection verification
-- Event tampering prevention tests
+2. **Performance Under Load**
+   - Sustain 1000 events/second for 1 hour
+   - Verify <100ms query response times
 
-## Monitoring & Observability
+3. **Correlation Accuracy**
+   - Generate known attack patterns
+   - Verify >95% detection rate
 
-### Metrics Collection
+4. **Real-time Updates**
+   - Create incident via API
+   - Verify WebSocket update <100ms
 
-**Event Processing Metrics**
-- Event ingestion rate (events/second)
-- Processing latency (milliseconds)
-- Correlation accuracy rates
-- Incident creation frequency
+5. **Security Validation**
+   - Attempt SQL injection
+   - Verify blocked and logged as security event
 
-**System Performance Metrics**
-- API response times
-- Database query performance
-- WebSocket connection counts
-- Memory and CPU utilization
-
-**Security Metrics**
-- Failed authentication attempts
-- Privilege escalation attempts
-- Suspicious activity patterns
-- Security incident resolution times
-
-### Alerting & Notifications
-
-**Critical Alerts**
-- High-severity incident creation
-- System component failures
-- Security breach attempts
-- Performance degradation
-
-**Dashboard Monitoring**
-- Real-time security metrics
-- Incident trend analysis
-- System health monitoring
-- User activity patterns
-
-## Migration Strategy
-
-### Zero-Downtime Deployment
-
-**Phase 1: Infrastructure Preparation**
-- Database schema migration with online DDL
-- Service deployment with blue-green strategy
-- Feature flag configuration for gradual rollout
-- Monitoring setup for migration validation
-
-**Phase 2: Data Migration**
-- Historical data preservation
-- Event format standardization
-- Incident data consolidation
-- Data integrity validation
-
-**Phase 3: Service Activation**
-- Gradual event processing activation
-- Real-time feature enablement
-- Performance monitoring and tuning
-- User access validation
-
-### Rollback Procedures
-
-- Database schema rollback scripts
-- Service version rollback capability
-- Data integrity validation procedures
-- Emergency incident response protocols
-
-## Success Criteria & Validation
-
-### Functional Requirements ✅
-
-- **Complete Event Collection**: All security-relevant events captured from authentication, API access, and system operations
-- **Real-time Processing**: Events processed and correlated within 5 seconds of occurrence
-- **Incident Management**: Full CRUD operations for security incidents with workflow support
-- **Dashboard Integration**: Live updates replacing all mock data with real security events
-- **Advanced Correlation**: Automated incident creation based on event patterns and thresholds
-
-### Performance Requirements 📊
-
-- **Event Throughput**: Handle 10,000+ events per hour without degradation
-- **API Response Times**: Sub-200ms response times for dashboard queries
-- **Real-time Latency**: WebSocket updates delivered within 2 seconds
-- **Concurrent Users**: Support 100+ simultaneous dashboard users
-- **Database Performance**: 99th percentile query times under 100ms
-
-### Security Requirements 🔒
-
-- **Complete Audit Trail**: All security events properly captured and immutably stored
-- **Access Control**: Granular role-based access to security data and operations  
-- **Data Protection**: Encryption at rest and in transit for all sensitive data
-- **Attack Prevention**: Protection against log injection, tampering, and unauthorized access
-- **Compliance Ready**: Full audit trail and data retention for regulatory requirements
+---
 
 ## Risk Mitigation
 
 ### Technical Risks
 
-**High Event Volume**
-- *Risk*: System overload during security incidents
-- *Mitigation*: Event batching, circuit breakers, auto-scaling
-
-**Data Loss**
-- *Risk*: Critical security events lost during processing
-- *Mitigation*: Persistent queues, transaction integrity, backup procedures
-
-**Performance Degradation**  
-- *Risk*: Dashboard slowdown during high activity
-- *Mitigation*: Caching layers, read replicas, materialized views
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| Queue overflow | High | Medium | Disk persistence, monitoring, alerts |
+| Database performance degradation | High | Medium | Indexes, partitioning, connection pooling |
+| Memory leak in WebSocket | Medium | Low | Connection limits, memory monitoring |
+| Correlation false positives | Medium | Medium | Confidence scoring, manual review |
+| Frontend state desync | Low | Medium | Optimistic updates with rollback |
 
 ### Operational Risks
 
-**Deployment Issues**
-- *Risk*: Service disruption during deployment
-- *Mitigation*: Blue-green deployment, feature flags, rollback procedures
-
-**Configuration Errors**
-- *Risk*: Incorrect event processing or correlation
-- *Mitigation*: Configuration validation, gradual rollout, monitoring
-
-## Implementation Prerequisites
-
-### Required Resources
-- **Team Composition:**
-  - 2 Backend Engineers (Rust/Actix-web expertise)
-  - 1 Frontend Engineer (Yew/WebAssembly expertise)
-  - 1 Database Administrator
-  - 1 DevOps Engineer
-  - 1 Security Analyst
-
-### Technical Dependencies
-- PostgreSQL 14+ with partitioning support
-- Redis 6+ for caching and session management
-- MinIO/S3 for cold storage
-- Prometheus & Grafana for monitoring
-- ElasticSearch (optional) for advanced log analysis
-
-### Development Environment Setup
-```bash
-# Clone repository
-git clone <repository-url>
-cd Oasis
-
-# Create feature branch
-git checkout -b feature/security-implementation
-
-# Set up environment variables
-cp .env.example .env
-# Configure DATABASE_URL, REDIS_URL, JWT_SECRET, etc.
-
-# Run existing tests to ensure baseline
-cargo test --all
-
-# Set up database with existing migrations
-cargo run --bin migrate
-```
-
-## Conclusion
-
-This comprehensive security implementation plan provides a complete, actionable roadmap for transforming the existing placeholder system into a production-ready security event monitoring and incident management platform. The plan leverages the robust existing authentication infrastructure while addressing all identified gaps through a phased, risk-mitigated approach.
-
-The 11-13 week implementation timeline is realistic and achievable given the existing codebase foundation, with clear deliverables and specific file locations for each component. The detailed technical specifications, combined with comprehensive testing and monitoring strategies, ensure successful execution.
-
-**Key Success Factors:**
-- Leveraging existing robust authentication infrastructure
-- Phased approach minimizing risk and ensuring stability
-- Clear integration points with current codebase
-- Comprehensive testing at every phase
-- Real-time monitoring and alerting from day one
-
-**Next Steps:**
-1. Stakeholder approval of implementation plan
-2. Resource allocation and team assignment (see Prerequisites section)
-3. Development environment setup using provided instructions
-4. Phase 1 implementation kickoff with database schema creation
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| Deployment failure | High | Low | Blue-green deployment, rollback plan |
+| Data migration issues | High | Low | Backup before migration, test in staging |
+| Monitoring blind spots | Medium | Medium | Comprehensive metrics, regular audits |
 
 ---
 
-*This document represents the definitive security implementation plan, version 1.0, combining best practices from security industry standards with specific adaptations for the Oasis platform architecture.*
+## Success Metrics
+
+### Week 10 Completion Criteria
+
+- [ ] **Functional Requirements**
+  - ✅ All placeholder code replaced
+  - ✅ Events collected from all middleware
+  - ✅ Correlation engine detecting patterns
+  - ✅ Incidents created automatically
+  - ✅ Dashboard showing real data
+  - ✅ Real-time updates working
+
+- [ ] **Performance Requirements**
+  - ✅ 10,000 events/minute sustained
+  - ✅ <100ms API response (95th percentile)
+  - ✅ <2s dashboard load time
+  - ✅ <100ms WebSocket latency
+
+- [ ] **Quality Requirements**
+  - ✅ >90% test coverage
+  - ✅ Zero critical security issues
+  - ✅ <1% error rate in production
+  - ✅ 99.9% uptime target
+
+- [ ] **Documentation**
+  - ✅ API documentation complete
+  - ✅ Deployment guide written
+  - ✅ Runbook for common issues
+  - ✅ Architecture diagrams updated
+
+---
+
+## Implementation Checklist
+
+### Pre-Implementation
+- [ ] Review this plan with team
+- [ ] Set up development environment
+- [ ] Create feature branch
+- [ ] Set up monitoring infrastructure
+
+### Phase 1: Database Schema
+- [ ] Create migration file with all tables, indexes, and triggers
+- [ ] Run performance tests with 1M mock events
+- [ ] Verify all queries use indexes
+- [ ] Document schema design decisions
+
+### Phase 2: Event Queue
+- [ ] Implement PersistentEventQueue
+- [ ] Add disk persistence
+- [ ] Test queue survives restart
+- [ ] Test handles database outage
+
+### Phase 3: Event Collection
+- [ ] Implement EventCollector
+- [ ] Add validation and enrichment
+- [ ] Create event generator
+- [ ] Test 1000 events/second rate
+
+### Phase 4: Repository Layer
+- [ ] Configure connection pooling
+- [ ] Implement bulk operations
+- [ ] Add prepared statements
+- [ ] Test concurrent access
+
+### Phase 5: Correlation Engine
+- [ ] Implement temporal correlation
+- [ ] Add pattern matching
+- [ ] Create result caching
+- [ ] Test correlation performance
+
+### Phase 6: API Implementation
+- [ ] Replace placeholder endpoints
+- [ ] Add Redis caching
+- [ ] Implement pagination
+- [ ] Load test APIs
+
+### Phase 7: WebSocket
+- [ ] Implement WebSocket actor
+- [ ] Add backpressure handling
+- [ ] Create subscription system
+- [ ] Test with 1000 connections
+
+### Phase 8: Frontend Integration
+- [ ] Replace mock data
+- [ ] Add optimistic updates
+- [ ] Implement offline support
+- [ ] Test user workflows
+
+### Phase 9: Monitoring
+- [ ] Add Prometheus metrics
+- [ ] Create Grafana dashboards
+- [ ] Set up alerts
+- [ ] Test monitoring pipeline
+
+### Phase 10: Production Readiness
+- [ ] Security scanning
+- [ ] 24-hour soak test
+- [ ] Complete documentation
+- [ ] Final validation
+
+---
+
+## Conclusion
+
+This comprehensive plan transforms the Oasis platform's security system from placeholders to production-ready infrastructure. The test-first approach ensures each component is solid before building on it, while the persistent queue architecture guarantees zero data loss even during system failures.
+
+The phased implementation allows for incremental delivery of value while maintaining system stability. Each phase has clear success criteria and validation gates, ensuring quality throughout the development process.
+
+Total estimated time: 10-12 weeks with a dedicated team of 2-3 developers.
